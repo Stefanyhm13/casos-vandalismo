@@ -42,11 +42,27 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS operadores (codigo TEXT PRIMARY KEY, nombre TEXT, cedula TEXT);
   CREATE TABLE IF NOT EXISTS buses (numero TEXT PRIMARY KEY, placa TEXT);
+  -- Roles creados por el administrador. "campos" es la lista (JSON) de campos que puede editar.
+  CREATE TABLE IF NOT EXISTS roles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    campos TEXT NOT NULL DEFAULT '[]',
+    puede_crear INTEGER NOT NULL DEFAULT 0
+  );
+  -- Campos nuevos que pertenecen a un rol creado. Su columna en "casos" se llama x_<id>.
+  CREATE TABLE IF NOT EXISTS campos_extra (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    rol TEXT NOT NULL,
+    etiqueta TEXT NOT NULL,
+    tipo TEXT NOT NULL,
+    opciones TEXT NOT NULL DEFAULT '[]'
+  );
 `);
 
 // Las columnas de "casos" salen de shared/campos.js: si se agrega un campo allí, se crea solo.
 const existentes = new Set(db.prepare('PRAGMA table_info(casos)').all().map((c) => c.name));
-for (const id of Object.keys(CAMPOS)) {
+const extras = db.prepare('SELECT id FROM campos_extra').all().map((c) => 'x_' + c.id);
+for (const id of [...Object.keys(CAMPOS), ...extras]) {
   if (!existentes.has(id)) db.exec(`ALTER TABLE casos ADD COLUMN ${id} TEXT NOT NULL DEFAULT ''`);
 }
 db.exec(`
@@ -54,6 +70,18 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_casos_cedula ON casos(cedula_operador);
   CREATE INDEX IF NOT EXISTS idx_historial_caso ON historial(caso_id);
 `);
+
+// Cambios únicos sobre datos ya existentes. "user_version" recuerda cuáles ya se aplicaron.
+const version = db.prepare('PRAGMA user_version').get().user_version;
+if (version < 1) {
+  // Los casos cargados antes de existir la "fecha de creación" tenían la fecha en que se
+  // importaron. Como no se conoce cuándo se crearon de verdad, se les pone la fecha (y hora) de la novedad.
+  db.exec(`
+    UPDATE casos SET creado_en = fecha_novedad || CASE WHEN hora <> '' THEN ' ' || hora || ':00' ELSE '' END
+    WHERE fecha_novedad <> '';
+    PRAGMA user_version = 1;
+  `);
+}
 
 export function cifrarClave(clave) {
   const sal = randomBytes(16);

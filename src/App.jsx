@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, alExpirar, guardarToken, hayToken } from './api.js';
-import { ROLES } from '../shared/campos.js';
+import { armar } from '../shared/campos.js';
 import Login from './componentes/Login.jsx';
 import CambiarClave from './componentes/CambiarClave.jsx';
 import Lista from './componentes/Lista.jsx';
@@ -16,6 +16,14 @@ export default function App() {
   const [cargando, setCargando] = useState(hayToken());
   const [ruta, setRuta] = useState(leerRuta());
   const [cambiandoClave, setCambiandoClave] = useState(false);
+  // Roles y campos creados por el administrador (se suman a los fijos)
+  const [extras, setExtras] = useState(null);
+  const cfg = useMemo(() => extras && armar(extras.roles, extras.campos), [extras]);
+  const idUsuario = usuario?.id;
+  useEffect(() => {
+    setExtras(null);
+    if (idUsuario) api('/config').then(setExtras).catch(() => setExtras({ roles: [], campos: [] }));
+  }, [idUsuario]);
 
   useEffect(() => {
     const alCambiar = () => setRuta(leerRuta());
@@ -38,19 +46,21 @@ export default function App() {
     return <CambiarClave obligatorio alTerminar={() => setUsuario({ ...usuario, debe_cambiar: false })} alSalir={salir} />;
   }
 
+  if (!cfg) return <div className="centro suave">Cargando…</div>;
+
   const [seccion, parametro] = ruta.split('/');
   let pagina;
-  if (seccion === 'caso') pagina = <Caso key={parametro} id={parametro} usuario={usuario} />;
-  else if (seccion === 'nuevo') pagina = <Caso key="nuevo" id={null} usuario={usuario} />;
-  else if (seccion === 'usuarios' && usuario.rol === 'ADMIN') pagina = <Usuarios yo={usuario} />;
-  else pagina = <Lista usuario={usuario} />;
+  if (seccion === 'caso') pagina = <Caso key={parametro} id={parametro} usuario={usuario} cfg={cfg} />;
+  else if (seccion === 'nuevo') pagina = <Caso key="nuevo" id={null} usuario={usuario} cfg={cfg} />;
+  else if (seccion === 'usuarios' && usuario.rol === 'ADMIN') pagina = <Usuarios yo={usuario} cfg={cfg} alCambiarRoles={setExtras} />;
+  else pagina = <Lista usuario={usuario} cfg={cfg} />;
 
   return (
     <>
       <header className="barra">
         <a className="marca" href="#/">
-          <img src="/icono.svg" alt="" />
-          <span>Casos Vandalismo</span>
+          <img src="/logo.png" alt="SAO" />
+          <span>Casos Vandalismo<small>Sistema Alimentador Oriental</small></span>
         </a>
         <nav>
           <a href="#/" className={!seccion || seccion === 'caso' || seccion === 'nuevo' ? 'activo' : ''}>Casos</a>
@@ -59,7 +69,7 @@ export default function App() {
         <div className="quien">
           <div>
             <strong>{usuario.nombre}</strong>
-            <small>{ROLES[usuario.rol]}</small>
+            <small>{cfg.roles[usuario.rol]}</small>
           </div>
           <button className="boton fantasma claro" onClick={() => setCambiandoClave(true)}>Cambiar contraseña</button>
           <button className="boton fantasma claro" onClick={salir}>Salir</button>

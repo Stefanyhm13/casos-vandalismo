@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { ir } from '../App.jsx';
-import { CAMPOS, idCaso, puedeCrear } from '../../shared/campos.js';
+import { CAMPOS, idCaso } from '../../shared/campos.js';
+import Incompletos from './Incompletos.jsx';
 
 export const fechaLegible = (f) => (f ? f.split('-').reverse().join('/') : '—');
 export const Etiqueta = ({ valor }) =>
@@ -14,7 +15,7 @@ const BUSCAR_POR = {
   documento: ['Documento del operador', 'Ej.: 71743252'],
 };
 
-export default function Lista({ usuario }) {
+export default function Lista({ usuario, cfg }) {
   const [q, setQ] = useState('');
   const [por, setPor] = useState('todo');
   const [estado, setEstado] = useState('');
@@ -41,8 +42,10 @@ export default function Lista({ usuario }) {
           <h1>Casos de vandalismo</h1>
           <p className="suave">Busca un caso y haz clic en él para verlo o completarlo.</p>
         </div>
-        {puedeCrear(usuario.rol) && <button className="boton primario grande" onClick={() => ir('nuevo')}>+ Nuevo caso</button>}
+        {cfg.puedeCrear(usuario.rol) && <button className="boton primario grande" onClick={() => ir('nuevo')}>+ Nuevo caso</button>}
       </div>
+
+      <Incompletos cfg={cfg} usuario={usuario} />
 
       <div className="tarjeta filtros">
         <label className="f-por">

@@ -1,12 +1,41 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
-import { ROLES } from '../../shared/campos.js';
+import FormularioRol from './FormularioRol.jsx';
 
-export default function Usuarios({ yo }) {
+export default function Usuarios({ yo, cfg, alCambiarRoles }) {
   const [lista, setLista] = useState([]);
   const [nuevo, setNuevo] = useState({ usuario: '', nombre: '', rol: '' });
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
+  // Ventana de rol: null = cerrada, { rol } = modificar, { paraNuevo: true } = crear desde el formulario de usuario
+  const [ventanaRol, setVentanaRol] = useState(null);
+  const ROLES = cfg.roles;
+  const CREAR = '+crear';
+  const elegirRol = (v) => (v === CREAR ? setVentanaRol({ paraNuevo: true }) : setNuevo({ ...nuevo, rol: v }));
+
+  const rolGuardado = (r) => {
+    alCambiarRoles({ roles: r.roles, campos: r.campos });
+    if (ventanaRol.paraNuevo) setNuevo((n) => ({ ...n, rol: r.id }));
+    setError('');
+    setAviso(ventanaRol.rol ? 'Rol actualizado' : 'Rol creado. Ya puedes asignarlo a los usuarios.');
+    setVentanaRol(null);
+  };
+  const eliminarRol = async (r) => {
+    if (!confirm(`¿Eliminar el rol "${r.nombre}"? Sus campos propios dejarán de mostrarse en los casos.`)) return;
+    setError(''); setAviso('');
+    try {
+      alCambiarRoles(await api('/roles/' + r.id, { metodo: 'DELETE' }));
+      setAviso(`Rol "${r.nombre}" eliminado`);
+    } catch (e) { setError(e.message); }
+  };
+  const resumen = (r) => {
+    const propios = cfg.secciones.find((s) => s.id === 'sec-' + r.id)?.campos.length ?? 0;
+    const partes = [];
+    if (r.campos.length) partes.push(`edita ${r.campos.length} campo(s) existentes`);
+    if (propios) partes.push(`${propios} campo(s) propios`);
+    if (r.puede_crear) partes.push('crea casos');
+    return partes.length ? 'Ver y editar · ' + partes.join(' · ') : 'Solo ver';
+  };
 
   const cargar = () => api('/usuarios').then(setLista).catch((e) => setError(e.message));
   useEffect(() => { cargar(); }, []);
@@ -46,9 +75,10 @@ export default function Usuarios({ yo }) {
           <input value={nuevo.usuario} placeholder="ej.: maria.perez" onChange={(e) => setNuevo({ ...nuevo, usuario: e.target.value.toLowerCase().replace(/\s/g, '') })} />
         </label>
         <label>Rol
-          <select value={nuevo.rol} onChange={(e) => setNuevo({ ...nuevo, rol: e.target.value })}>
+          <select value={nuevo.rol} onChange={(e) => elegirRol(e.target.value)}>
             <option value="">Elegir…</option>
             {Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+            <option value={CREAR}>+ Crear rol nuevo…</option>
           </select>
         </label>
         <button className="boton primario" disabled={!nuevo.nombre || !nuevo.usuario || !nuevo.rol}>+ Crear usuario</button>
@@ -85,6 +115,36 @@ export default function Usuarios({ yo }) {
           </tbody>
         </table>
       </div>
+
+      <div className="encabezado roles">
+        <div>
+          <h2>Roles creados</h2>
+          <p className="suave">Si los roles que vienen con la aplicación no te sirven, crea uno y elige qué puede ver o editar.</p>
+        </div>
+        <button className="boton fantasma" onClick={() => setVentanaRol({})}>+ Crear rol</button>
+      </div>
+      {cfg.rolesExtra.length > 0 && (
+        <div className="tarjeta tabla-caja">
+          <table className="sin-clic">
+            <thead><tr><th>Rol</th><th>Permisos</th><th>Usuarios</th><th></th></tr></thead>
+            <tbody>
+              {cfg.rolesExtra.map((r) => (
+                <tr key={r.id}>
+                  <td><strong>{r.nombre}</strong></td>
+                  <td>{resumen(r)}</td>
+                  <td>{lista.filter((u) => u.rol === r.id).length}</td>
+                  <td className="acciones">
+                    <button className="boton fantasma" onClick={() => setVentanaRol({ rol: r })}>Modificar</button>
+                    <button className="boton fantasma" onClick={() => eliminarRol(r)}>Eliminar</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {ventanaRol && <FormularioRol cfg={cfg} rol={ventanaRol.rol} alGuardar={rolGuardado} alCerrar={() => setVentanaRol(null)} />}
     </>
   );
 }

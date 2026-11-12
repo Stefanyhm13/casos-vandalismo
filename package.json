@@ -11,7 +11,8 @@
     "dev": "concurrently -n servidor,web -c green,blue \"node --watch server/index.js\" \"vite\"",
     "build": "vite build",
     "start": "node server/index.js",
-    "importar": "node server/importar.js"
+    "importar": "node server/importar.js",
+    "importar-buses": "node server/importar-buses.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",

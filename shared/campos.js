@@ -98,8 +98,47 @@ export const CAMPOS = Object.fromEntries(
   SECCIONES.flatMap((s) => s.campos.map((c) => [c.id, { ...c, rol: s.rol, seccion: s.id }]))
 );
 
-export const puedeEditar = (rolUsuario, rolSeccion) => rolUsuario === 'ADMIN' || rolUsuario === rolSeccion;
-export const puedeCrear = (rolUsuario) => puedeEditar(rolUsuario, 'PESV-ADMIN');
+// Tipos que el administrador puede elegir al crear un campo nuevo para un rol.
+export const TIPOS_NUEVOS = {
+  texto: 'Texto corto',
+  area: 'Texto largo',
+  numero: 'Número',
+  fecha: 'Fecha',
+  hora: 'Hora',
+  opcion: 'Lista de opciones',
+};
+
+// Une lo fijo de este archivo con los roles y campos creados por el administrador.
+//   rolesExtra:  [{ id, nombre, campos: [ids que puede editar], puede_crear }]
+//   camposExtra: [{ id, rol, etiqueta, tipo, opciones }]  (campos propios de un rol creado)
+// La usan el servidor y la app web, así los permisos se calculan igual en ambos lados.
+export function armar(rolesExtra = [], camposExtra = []) {
+  const roles = { ...ROLES };
+  const extra = {};
+  for (const r of rolesExtra) { roles[r.id] = r.nombre; extra[r.id] = r; }
+
+  const secciones = [...SECCIONES];
+  for (const r of rolesExtra) {
+    const propios = camposExtra.filter((c) => c.rol === r.id);
+    if (!propios.length) continue;
+    secciones.push({
+      id: 'sec-' + r.id,
+      titulo: r.nombre,
+      rol: r.id,
+      campos: propios.map((c) => ({ id: c.id, etiqueta: c.etiqueta, tipo: c.tipo, opciones: c.opciones, ancho: c.tipo === 'area' ? 4 : 1 })),
+    });
+  }
+  const campos = Object.fromEntries(
+    secciones.flatMap((s) => s.campos.map((c) => [c.id, { ...c, rol: s.rol, seccion: s.id }]))
+  );
+
+  // Un rol edita los campos de sus propias secciones y, si es un rol creado, los que le marcaron.
+  const puedeEditar = (rol, campoId) =>
+    !!campos[campoId] && (rol === 'ADMIN' || campos[campoId].rol === rol || !!extra[rol]?.campos.includes(campoId));
+  const puedeCrear = (rol) => rol === 'ADMIN' || rol === 'PESV-ADMIN' || !!extra[rol]?.puede_crear;
+
+  return { roles, rolesExtra, secciones, campos, puedeEditar, puedeCrear };
+}
 
 export const soloDigitos = (v) => String(v ?? '').replace(/\D/g, '');
 export const codigo4 = (v) => {

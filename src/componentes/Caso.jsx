@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import { ir } from '../App.jsx';
 import { Etiqueta, fechaLegible } from './Lista.jsx';
-import { SECCIONES, ROLES, puedeEditar, puedeCrear, idCaso, codigo4, soloDigitos } from '../../shared/campos.js';
+import FotoOperador from './FotoOperador.jsx';
+import { idCaso, codigo4, soloDigitos } from '../../shared/campos.js';
 
 // Un campo editable. Las fechas y horas abren el selector del navegador al hacer clic.
-function Entrada({ campo, valor, cambiar, alSalir }) {
-  const comun = { id: campo.id, value: valor, onChange: (e) => cambiar(e.target.value), onBlur: alSalir };
+function Entrada({ campo, valor, cambiar, alSalir, lista }) {
+  const comun = { id: campo.id, value: valor, onChange: (e) => cambiar(e.target.value), onBlur: alSalir, list: lista, autoComplete: lista ? 'off' : undefined };
   const abrir = (e) => { try { e.target.showPicker?.(); } catch { /* el navegador no lo permite */ } };
   switch (campo.tipo) {
     case 'fecha': return <input type="date" {...comun} onClick={abrir} />;
@@ -30,8 +31,39 @@ function Entrada({ campo, valor, cambiar, alSalir }) {
 }
 
 const mostrar = (campo, v) => (!v ? '—' : campo.tipo === 'fecha' ? fechaLegible(v) : v);
+// "2026-09-22 06:00:00" -> "22/09/2026 06:00"
+const fechaHora = (v) => {
+  const [f, h] = String(v ?? '').split(' ');
+  return f ? fechaLegible(f) + (h ? ' ' + h.slice(0, 5) : '') : '—';
+};
+const soloPlaca = (v) => String(v ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const sinCeros = (v) => (soloDigitos(v) ? String(Number(soloDigitos(v))) : '');
 
-export default function Caso({ id, usuario }) {
+// Opción desplegable con todos los casos del mismo operador. Cada uno abre en una pestaña nueva.
+function CasosOperador({ id }) {
+  const [casos, setCasos] = useState(null);
+  useEffect(() => { api('/casos/' + id + '/operador').then(setCasos).catch(() => setCasos(null)); }, [id]);
+  if (!casos) return null;
+  return (
+    <details className="del-operador">
+      <summary>Cantidad de casos del operador: <strong>{casos.length}</strong></summary>
+      <ul>
+        {casos.map((c) => (
+          <li key={c.id}>
+            <a href={'#/caso/' + c.id} target="_blank" rel="noopener" title="Abrir este caso en una pestaña nueva">
+              <strong className="id">{idCaso(c.id)}</strong>
+              <Etiqueta valor={c.tipo_dano} />
+              <span className="suave">{fechaLegible(c.fecha_novedad)}</span>
+              {String(c.id) === String(id) ? <span className="suave">· este caso</span> : <span className="abrir">Abrir ↗</span>}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+export default function Caso({ id, usuario, cfg }) {
   const esNuevo = id === null;
   const [original, setOriginal] = useState(esNuevo ? {} : null);
   const [cambios, setCambios] = useState({});
@@ -40,6 +72,10 @@ export default function Caso({ id, usuario }) {
   const [aviso, setAviso] = useState('');
   const [nota, setNota] = useState({});
   const [guardando, setGuardando] = useState(false);
+  // Listado de buses para sugerir número y placa mientras se escribe
+  const [buses, setBuses] = useState([]);
+  useEffect(() => { api('/buses').then(setBuses).catch(() => {}); }, []);
+  const puestoSolo = useRef({}); // lo último que la app completó sola en número o placa
 
   const recibir = (d) => { setOriginal(d.caso); setHistorial(d.historial); setCambios({}); };
   useEffect(() => {
@@ -55,7 +91,7 @@ export default function Caso({ id, usuario }) {
     return () => window.removeEventListener('beforeunload', avisar);
   }, [pendientes]);
 
-  if (esNuevo && !puedeCrear(usuario.rol)) return <div className="aviso error">Tu rol no puede crear casos nuevos.</div>;
+  if (esNuevo && !cfg.puedeCrear(usuario.rol)) return <div className="aviso error">Tu rol no puede crear casos nuevos.</div>;
   if (!original) return error ? <div className="aviso error">{error} <a href="#/">Volver a la lista</a></div> : <p className="suave">Cargando caso…</p>;
 
   const valor = (c) => cambios[c] ?? original[c] ?? '';
@@ -68,7 +104,25 @@ export default function Caso({ id, usuario }) {
     });
   };
 
-  // Al salir del código o del número de bus: completa ceros y trae nombre, documento y placa
+  // Número y placa del bus van enlazados: al escribir o elegir uno de la lista, se completa el otro.
+  const enlazar = (otro, encontrado) => {
+    if (encontrado) {
+      puestoSolo.current[otro] = encontrado;
+      cambiar(otro, encontrado);
+    } else if (puestoSolo.current[otro] && valor(otro) === puestoSolo.current[otro]) {
+      // Lo escrito ya no coincide con ningún bus: se quita lo que se había completado solo
+      puestoSolo.current[otro] = null;
+      cambiar(otro, original[otro] ?? '');
+    }
+  };
+  const alCambiar = (campo, v) => {
+    cambiar(campo.id, v);
+    if (campo.id === 'numero_bus') enlazar('placa_bus', buses.find((b) => b.numero === sinCeros(v))?.placa);
+    if (campo.id === 'placa_bus') enlazar('numero_bus', buses.find((b) => b.placa === soloPlaca(v))?.numero);
+  };
+  const LISTAS = { numero_bus: 'lista-numeros-bus', placa_bus: 'lista-placas-bus' };
+
+  // Al salir del código del operador: completa ceros y trae nombre y documento
   const alSalir = async (campo) => {
     if (campo.id === 'codigo_operador') {
       const codigo = codigo4(valor('codigo_operador'));
@@ -80,11 +134,16 @@ export default function Caso({ id, usuario }) {
       setNota((n) => ({ ...n, codigo_operador: op ? '' : 'No está en el listado de operadores. Escribe el nombre y el documento.' }));
     }
     if (campo.id === 'numero_bus') {
-      const numero = valor('numero_bus');
-      if (!numero || numero === (original.numero_bus ?? '')) return;
-      const bus = await api('/buses/' + numero).catch(() => null);
-      if (bus) cambiar('placa_bus', bus.placa);
-      setNota((n) => ({ ...n, numero_bus: bus ? '' : 'No está en el listado de buses. Escribe la placa.' }));
+      const numero = sinCeros(valor('numero_bus'));
+      const bus = buses.find((b) => b.numero === numero);
+      if (bus) cambiar('numero_bus', numero); // "001" queda como "1", igual que en el listado
+      setNota((n) => ({ ...n, numero_bus: !numero || bus || !buses.length ? '' : 'No está en el listado de buses. Escribe la placa.' }));
+    }
+    if (campo.id === 'placa_bus') {
+      const placa = soloPlaca(valor('placa_bus'));
+      const bus = buses.find((b) => b.placa === placa);
+      if (bus) cambiar('placa_bus', placa);
+      setNota((n) => ({ ...n, placa_bus: !placa || bus || !buses.length ? '' : 'No está en el listado de buses. Escribe el número.' }));
     }
   };
 
@@ -113,20 +172,28 @@ export default function Caso({ id, usuario }) {
     await api('/casos/' + id, { metodo: 'DELETE' }).then(() => ir('')).catch((e) => setError(e.message));
   };
 
-  const secciones = esNuevo ? SECCIONES.filter((s) => puedeEditar(usuario.rol, s.rol)) : SECCIONES;
-  const editaAlgo = SECCIONES.some((s) => puedeEditar(usuario.rol, s.rol));
+  // Los permisos son por campo: un rol puede editar solo algunos campos de una sección.
+  const edita = (c) => cfg.puedeEditar(usuario.rol, c.id);
+  // En un caso nuevo solo se muestran los campos que este usuario puede llenar.
+  const secciones = cfg.secciones
+    .map((s) => (esNuevo ? { ...s, campos: s.campos.filter(edita) } : s))
+    .filter((s) => s.campos.length);
+  const editaAlgo = secciones.some((s) => s.campos.some(edita));
 
   return (
     <div className="caso">
       <button className="boton fantasma volver" onClick={volver}>← Volver a la lista</button>
-      <div className="encabezado">
-        <div>
+      <div className="encabezado tarjeta ficha">
+        <FotoOperador cedula={valor('cedula_operador')} nombre={valor('nombre_operador')} />
+        <div className="ficha-datos">
           <h1>{esNuevo ? 'Nuevo caso' : <>Caso <span className="id">{idCaso(id)}</span></>}</h1>
+          <p className="operador">{valor('nombre_operador') || 'Operador sin registrar'}</p>
           <p className="suave">
-            {esNuevo
-              ? 'Ningún campo es obligatorio: llena lo que tengas y completa el resto después. El ID se asigna al guardar.'
-              : <>{original.nombre_operador || 'Operador sin registrar'} · {fechaLegible(original.fecha_novedad)} {original.tipo_dano && <Etiqueta valor={original.tipo_dano} />} {original.estado && <Etiqueta valor={original.estado} />}</>}
+            {[valor('codigo_operador') && 'Código ' + valor('codigo_operador'), valor('cedula_operador') && 'Documento ' + valor('cedula_operador')].filter(Boolean).join(' · ')}
+            {!esNuevo && <> {original.tipo_dano && <Etiqueta valor={original.tipo_dano} />} {original.estado && <Etiqueta valor={original.estado} />}</>}
           </p>
+          {!esNuevo && <CasosOperador key={(original.cedula_operador || '') + '/' + (original.codigo_operador || '')} id={id} />}
+          {esNuevo && <p className="suave">Ningún campo es obligatorio: llena lo que tengas y completa el resto después. El ID se asigna al guardar.</p>}
         </div>
         {!esNuevo && usuario.rol === 'ADMIN' && <button className="boton peligro" onClick={eliminar}>Eliminar caso</button>}
       </div>
@@ -134,31 +201,43 @@ export default function Caso({ id, usuario }) {
       {!esNuevo && !editaAlgo && <div className="aviso info">Tu usuario es de solo consulta: puedes ver toda la información, pero no modificarla.</div>}
 
       {secciones.map((s) => {
-        const editable = puedeEditar(usuario.rol, s.rol);
+        const cuantos = s.campos.filter(edita).length;
         return (
-          <section key={s.id} className={'tarjeta seccion ' + (editable ? 'editable' : 'bloqueada')}>
+          <section key={s.id} className={'tarjeta seccion ' + (cuantos ? 'editable' : 'bloqueada')}>
             <header>
               <h2>{s.titulo}</h2>
-              <span className={'permiso ' + (editable ? 'si' : 'no')}>
-                {editable ? '✎ Puedes editar' : `🔒 Solo lectura · lo diligencia ${ROLES[s.rol]}`}
+              <span className={'permiso ' + (cuantos ? 'si' : 'no')}>
+                {cuantos === s.campos.length ? '✎ Puedes editar'
+                  : cuantos ? `✎ Puedes editar ${cuantos} de ${s.campos.length} campos`
+                  : `🔒 Solo lectura · lo diligencia ${cfg.roles[s.rol]}`}
               </span>
             </header>
             <div className="campos">
-              {s.campos.map((c) => (
-                <div key={c.id} className={'campo ancho-' + (c.ancho || 1) + (c.id in cambios ? ' cambiado' : '')}>
+              {s.campos.map((c) => { const editable = edita(c); return (<Fragment key={c.id}>
+                <div className={'campo ancho-' + (c.ancho || 1) + (c.id in cambios ? ' cambiado' : '')}>
                   <label htmlFor={editable ? c.id : undefined}>{c.etiqueta}</label>
                   {editable
-                    ? <Entrada campo={c} valor={valor(c.id)} cambiar={(v) => cambiar(c.id, v)} alSalir={() => alSalir(c)} />
+                    ? <Entrada campo={c} valor={valor(c.id)} cambiar={(v) => alCambiar(c, v)} alSalir={() => alSalir(c)} lista={LISTAS[c.id]} />
                     : <div className={'lectura' + (valor(c.id) ? '' : ' sin-dato')}>{mostrar(c, valor(c.id))}</div>}
                   {editable && (nota[c.id] ? <small className="nota">{nota[c.id]}</small> : c.ayuda && <small className="suave">{c.ayuda}</small>)}
                 </div>
-              ))}
+                {c.id === 'tipo_dano' && !esNuevo && (
+                  <div className="campo">
+                    <label>Fecha de creación del caso</label>
+                    <div className="lectura">{fechaHora(original.creado_en)}</div>
+                    <small className="suave">🔒 Se registra sola al crear el caso</small>
+                  </div>
+                )}
+              </Fragment>); })}
             </div>
           </section>
         );
       })}
 
-      {esNuevo && <div className="aviso info">Después de crear el caso, CMO, SIES24 y Jurídico completan su parte desde sus propios usuarios.</div>}
+      <datalist id="lista-numeros-bus">{buses.map((b) => <option key={b.numero} value={b.numero} label={'Placa ' + b.placa} />)}</datalist>
+      <datalist id="lista-placas-bus">{buses.map((b) => <option key={b.numero} value={b.placa} label={'Bus ' + b.numero} />)}</datalist>
+
+      {esNuevo && <div className="aviso info">Después de crear el caso, las demás áreas completan su parte desde sus propios usuarios.</div>}
 
       {!esNuevo && historial.length > 0 && (
         <details className="tarjeta historial">

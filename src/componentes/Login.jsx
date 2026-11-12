@@ -25,8 +25,13 @@ export default function Login({ alEntrar }) {
   return (
     <div className="portada">
       <form className="tarjeta acceso" onSubmit={entrar}>
-        <img src="/icono.svg" alt="" className="logo" />
-        <h1>Casos Vandalismo</h1>
+        <div className="acceso-marca">
+          <img src="/logo.png" alt="SAO" className="logo" />
+          <div>
+            <h1>Casos Vandalismo</h1>
+            <small>Sistema Alimentador Oriental</small>
+          </div>
+        </div>
         <p className="suave">Ingresa con tu usuario para registrar y consultar casos.</p>
         <label>
           Usuario
