@@ -76,11 +76,57 @@ small { display: block; font-size: 12.5px; }
 /* Piezas básicas */
 .tarjeta { background: var(--vidrio); border: 1px solid var(--borde-vidrio); border-radius: var(--radio); -webkit-backdrop-filter: var(--desenfoque); backdrop-filter: var(--desenfoque); box-shadow: var(--sombra); }
 label { display: flex; flex-direction: column; gap: 5px; font-weight: 500; font-size: 13.5px; color: #33443a; }
-input, select, textarea { font: inherit; color: var(--tinta); padding: 9px 13px; border: 1px solid var(--borde-campo); border-radius: 13px; background: var(--campo); width: 100%; min-height: 42px; transition: border-color 0.2s, background 0.2s; }
-input:hover, select:hover, textarea:hover { border-color: rgba(23, 60, 38, 0.4); }
+input, select, textarea, .selector { font: inherit; color: var(--tinta); padding: 9px 13px; border: 1px solid var(--borde-campo); border-radius: 13px; background: var(--campo); width: 100%; min-height: 42px; transition: border-color 0.2s, background 0.2s; }
+input:hover, select:hover, textarea:hover, .selector:hover { border-color: rgba(23, 60, 38, 0.4); }
 textarea { resize: vertical; }
-input:focus, select:focus, textarea:focus, .boton:focus-visible, tr:focus-visible { outline: 3px solid rgba(37, 160, 85, 0.32); border-color: var(--verde); background: #fff; }
-input[type="date"], input[type="time"] { cursor: pointer; }
+input:focus, select:focus, textarea:focus, .selector:focus-visible, .selector[aria-expanded="true"], .boton:focus-visible, tr:focus-visible { outline: 3px solid rgba(37, 160, 85, 0.32); border-color: var(--verde); background: #fff; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--verde-osc); cursor: pointer; }
+
+/* Listas desplegables con los colores de la app (en navegadores que lo permiten; en los demás se ven como siempre) */
+@supports (appearance: base-select) {
+  select, ::picker(select) { appearance: base-select; }
+  select { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; }
+  select:disabled { cursor: not-allowed; opacity: 0.6; }
+  select::picker-icon { color: var(--gris); transition: rotate 0.2s; }
+  select:open::picker-icon { rotate: 180deg; }
+  ::picker(select) { margin: 6px 0; padding: 6px; border: 1px solid var(--verde-linea); border-radius: 15px; background: #fff; box-shadow: 0 16px 40px rgba(18, 70, 40, 0.22); max-height: 330px; }
+  option { padding: 8px 12px; border-radius: 10px; cursor: pointer; color: var(--tinta); }
+  option + option { margin-top: 2px; }
+  option:hover, option:focus-visible { background: var(--verde-suave); outline: none; }
+  option:checked { background: var(--degradado); color: #fff; font-weight: 600; }
+  option::checkmark { display: none; }
+}
+
+/* Selector de fecha y de hora: un botón con aspecto de campo y una ventana flotante */
+.selector { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-align: left; cursor: pointer; }
+.selector svg { flex: none; color: var(--verde-osc); }
+.selector.sin-valor span { color: #8a988f; }
+.emergente { position: fixed; inset: auto; margin: 0; padding: 14px; border: 1px solid var(--verde-linea); border-radius: 20px; background: #fff; color: var(--tinta); box-shadow: 0 18px 46px rgba(18, 70, 40, 0.26); font: inherit; }
+.emergente button { font: inherit; border: 0; background: none; color: var(--tinta); cursor: pointer; border-radius: 10px; transition: background 0.15s; }
+.emergente button:hover { background: var(--verde-suave); }
+.emergente button:focus-visible { outline: 3px solid rgba(37, 160, 85, 0.32); }
+.emergente button.elegido, .emergente button.elegido:hover { background: var(--degradado); color: #fff; font-weight: 700; }
+.emergente .rejilla { display: grid; gap: 2px; }
+.emergente footer { display: flex; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--linea); }
+.emergente footer button { padding: 6px 12px; font-weight: 600; color: var(--verde-osc); }
+.emergente footer button:last-child { margin-left: auto; }
+.emergente footer .listo { background: var(--degradado); color: #fff; }
+.calendario { width: 286px; }
+.calendario header { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
+.calendario header strong { flex: 1; text-align: center; font-weight: 600; color: var(--verde-prof); }
+.calendario header button { width: 30px; height: 30px; font-size: 18px; line-height: 1; color: var(--verde-osc); }
+.calendario .rejilla { grid-template-columns: repeat(7, 1fr); }
+.calendario .semana span { text-align: center; font-size: 12px; font-weight: 600; color: var(--gris); padding: 4px 0; }
+.calendario .rejilla button { height: 36px; font-variant-numeric: tabular-nums; }
+.calendario .otro-mes { color: #a9b5ad; }
+.calendario .hoy:not(.elegido) { box-shadow: inset 0 0 0 1.5px var(--verde); color: var(--verde-osc); font-weight: 600; }
+.reloj { width: 336px; }
+.reloj > strong { display: block; margin: 0 0 6px; font-size: 13.5px; font-weight: 600; color: var(--verde-prof); }
+.reloj > strong + .rejilla { margin-bottom: 12px; }
+.reloj > strong span { font-weight: 400; }
+.reloj .horas { grid-template-columns: repeat(8, 1fr); }
+.reloj .minutos { grid-template-columns: repeat(10, 1fr); }
+.reloj .rejilla button { height: 30px; padding: 0; font-size: 13.5px; font-variant-numeric: tabular-nums; }
 .campo-clave { position: relative; display: block; }
 .campo-clave input { padding-right: 46px; }
 .campo-clave button { position: absolute; top: 50%; right: 5px; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--gris); cursor: pointer; }
@@ -149,7 +195,9 @@ legend .casilla small { display: inline; margin-left: 6px; }
 .pendientes li.activo { background: var(--verde-suave); }
 .pendientes .quien-es { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pendientes .quien-es small { color: var(--gris); }
-.pendientes .cuantos { color: #8a5300; font-weight: 500; font-size: 13.5px; white-space: nowrap; }
+.pendientes .cuantos { color: #8a5300; font-weight: 500; font-size: 13.5px; white-space: nowrap; text-align: right; }
+.pendientes .cuantos small { color: var(--gris); font-weight: 400; }
+.previa-dias { margin: -6px 0 12px; font-size: 13.5px; }
 .pendientes li .boton { padding: 5px 12px; font-size: 13.5px; }
 .previa { padding: 16px 18px; border-left: 1px solid var(--linea); background: rgba(255, 255, 255, 0.4); max-height: 380px; overflow-y: auto; }
 .previa h3 { margin: 0 0 12px; font-size: 15.5px; font-weight: 600; }
@@ -163,6 +211,15 @@ legend .casilla small { display: inline; margin-left: 6px; }
 .filtros label { min-width: 150px; }
 .filtros .f-por { min-width: 210px; }
 .filtros .f-q { flex: 1; min-width: 240px; }
+.filtros .f-corto { min-width: 118px; }
+.acciones-lista { display: flex; gap: 10px; flex-wrap: wrap; }
+.barra-exportar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 14px; padding: 12px 18px; border-color: var(--verde-linea); }
+.barra-exportar > span { flex: 1; min-width: 240px; }
+.marca-fila { width: 44px; padding-right: 0; }
+.marca-fila input { width: 17px; height: 17px; min-height: 0; padding: 0; margin: 2px 0 0; pointer-events: none; }
+th.marca-fila input { pointer-events: auto; }
+tbody tr.marcado, table:not(.sin-clic) tbody tr.marcado:hover { background: rgba(37, 160, 85, 0.16); }
+td input[type="email"] { min-height: 34px; padding: 5px 10px; min-width: 190px; }
 .conteo { margin: 14px 4px 8px; }
 .vacio { padding: 40px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .tabla-caja { overflow-x: auto; margin-top: 8px; }
@@ -222,7 +279,7 @@ td select { min-height: 34px; padding: 5px 8px; }
 .campo { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .ancho-2 { grid-column: span 2; }
 .ancho-4 { grid-column: span 4; }
-.campo.cambiado input, .campo.cambiado select, .campo.cambiado textarea { border-color: var(--ambar); background: #fff8ec; }
+.campo.cambiado input, .campo.cambiado select, .campo.cambiado textarea, .campo.cambiado .selector { border-color: var(--ambar); background: #fff8ec; }
 .lectura { padding: 8px 0; min-height: 36px; white-space: pre-wrap; overflow-wrap: anywhere; border-bottom: 1px dashed rgba(23, 60, 38, 0.2); }
 .lectura.sin-dato { color: #94a199; }
 .nota { color: var(--ambar); font-weight: 500; }
@@ -232,6 +289,7 @@ td select { min-height: 34px; padding: 5px 8px; }
 /* Barra de guardar: píldora de vidrio flotante */
 .guardar { position: fixed; left: 0; right: 0; bottom: 14px; width: min(1192px, calc(100% - 28px)); margin: 0 auto; display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 10px 12px 10px 22px; background: rgba(255, 255, 255, 0.82); border: 1px solid #fff; border-radius: var(--radio); -webkit-backdrop-filter: var(--desenfoque); backdrop-filter: var(--desenfoque); box-shadow: 0 14px 40px rgba(18, 70, 40, 0.22), inset 0 1px 0 #fff; z-index: 4; }
 .guardar > span { margin-right: auto; font-weight: 500; color: var(--gris); }
+.guardar > span small { font-weight: 400; }
 .guardar.activo { border-color: rgba(184, 84, 0, 0.55); }
 .guardar.activo > span { color: var(--ambar); }
 .txt-error { color: var(--rojo); }

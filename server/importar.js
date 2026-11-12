@@ -7,7 +7,7 @@ import { CAMPOS, normalizar } from '../shared/campos.js';
 
 const ruta = process.argv[2];
 if (!ruta) {
-  console.error('Indica la ruta del Excel:  npm run importar -- "Datos Atención Vandalismo.xlsx"');
+  console.error('Indique la ruta del Excel:  npm run importar -- "Datos Atención Vandalismo.xlsx"');
   process.exit(1);
 }
 

@@ -62,6 +62,6 @@ for (const tabla of ['usuarios', 'roles', 'campos_extra', 'operadores', 'buses',
   const b = (await db.uno(`SELECT COUNT(*) n FROM ${tabla}`)).n;
   if (a !== b) { bien = false; console.error(`  ¡Diferencia en ${tabla}! SQLite: ${a} · MySQL: ${b}`); }
 }
-console.log(bien ? 'Listo: MySQL quedó con los mismos datos que SQLite.' : 'La copia terminó con diferencias: revisa los mensajes de arriba.');
+console.log(bien ? 'Listo: MySQL quedó con los mismos datos que SQLite.' : 'La copia terminó con diferencias: revise los mensajes de arriba.');
 await db.cerrar();
 process.exit(bien ? 0 : 1);

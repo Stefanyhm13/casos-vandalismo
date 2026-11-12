@@ -147,10 +147,15 @@ export const codigo4 = (v) => {
 };
 export const idCaso = (id) => 'CV-' + String(id).padStart(4, '0');
 
+// Lo que queda en un campo que la persona guardó sin diligenciar ("no aplica").
+export const NA = 'N/A';
+export const sinDato = (v) => !v || v === NA;
+
 // Limpia un valor según el tipo de campo. Ningún campo es obligatorio: vacío siempre es válido.
 export function normalizar(campo, valor) {
   const v = valor == null ? '' : String(valor).trim();
   if (!v) return '';
+  if (/^n\/?a$/i.test(v)) return NA;
   switch (campo.tipo) {
     case 'codigo': return codigo4(v);
     case 'numero': return soloDigitos(v);

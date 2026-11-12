@@ -33,7 +33,7 @@ export default function Login({ alEntrar }) {
             <small>Sistema Alimentador Oriental</small>
           </div>
         </div>
-        <p className="suave">Ingresa con tu usuario para registrar y consultar casos.</p>
+        <p className="suave">Ingrese con su usuario para registrar y consultar casos.</p>
         <label>
           Usuario
           <input value={usuario} onChange={(e) => setUsuario(e.target.value)} autoFocus autoComplete="username" />

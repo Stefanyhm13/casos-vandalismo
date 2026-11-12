@@ -21,8 +21,8 @@ export default function CambiarClave({ obligatorio, alTerminar, alSalir }) {
 
   const formulario = (
     <form className="tarjeta acceso" onSubmit={guardar}>
-      <h1>{obligatorio ? 'Crea tu contraseña' : 'Cambiar contraseña'}</h1>
-      {obligatorio && <p className="suave">Estás usando una contraseña temporal. Antes de continuar, crea una que solo tú conozcas.</p>}
+      <h1>{obligatorio ? 'Cree su contraseña' : 'Cambiar contraseña'}</h1>
+      {obligatorio && <p className="suave">Está usando una contraseña temporal. Antes de continuar, cree una que solo usted conozca.</p>}
       <label>
         {obligatorio ? 'Contraseña temporal' : 'Contraseña actual'}
         <CampoClave value={actual} onChange={(e) => setActual(e.target.value)} autoFocus autoComplete="current-password" />
@@ -32,7 +32,7 @@ export default function CambiarClave({ obligatorio, alTerminar, alSalir }) {
         <CampoClave value={nueva} onChange={(e) => setNueva(e.target.value)} autoComplete="new-password" />
       </label>
       <label>
-        Repite la nueva contraseña
+        Repita la nueva contraseña
         <CampoClave value={repetir} onChange={(e) => setRepetir(e.target.value)} autoComplete="new-password" />
       </label>
       {error && <div className="aviso error">{error}</div>}

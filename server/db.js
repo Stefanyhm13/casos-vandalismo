@@ -89,8 +89,14 @@ async function preparar() {
     rol VARCHAR(50) NOT NULL,
     clave VARCHAR(255) NOT NULL,
     debe_cambiar TINYINT NOT NULL DEFAULT 1,
-    activo TINYINT NOT NULL DEFAULT 1
+    activo TINYINT NOT NULL DEFAULT 1,
+    correo VARCHAR(255) NOT NULL DEFAULT ''
   )`);
+  // Bases creadas antes de que existiera el correo del usuario
+  const tieneCorreo = await db.uno(
+    "SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'usuarios' AND column_name = 'correo'"
+  );
+  if (!tieneCorreo) await db.ejecutar("ALTER TABLE usuarios ADD COLUMN correo VARCHAR(255) NOT NULL DEFAULT ''");
   await tabla(`sesiones (
     token CHAR(64) PRIMARY KEY,
     usuario_id INT NOT NULL,
@@ -137,6 +143,14 @@ async function preparar() {
   if (!indices.has('idx_casos_codigo')) await db.ejecutar('CREATE INDEX idx_casos_codigo ON casos (codigo_operador)');
   if (!indices.has('idx_casos_cedula')) await db.ejecutar('CREATE INDEX idx_casos_cedula ON casos (cedula_operador(20))');
 
+  // Los casos cargados desde el Excel no tienen fecha de creación propia: se les deja la de la novedad.
+  // Así "hace cuántos días está pendiente" se cuenta desde la novedad; los casos creados en la app, desde su creación.
+  const DE_LA_NOVEDAD = "CONCAT(fecha_novedad, ' ', IF(hora REGEXP '^[0-9]{2}:[0-9]{2}$', hora, '00:00'), ':00')";
+  await db.ejecutar(
+    `UPDATE casos SET creado_en = ${DE_LA_NOVEDAD}
+     WHERE creado_por = 'Importación' AND fecha_novedad REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' AND creado_en <> ${DE_LA_NOVEDAD}`
+  );
+
   // Usuarios iniciales (solo la primera vez). Deben cambiar la clave al entrar.
   if ((await db.uno('SELECT COUNT(*) n FROM usuarios')).n === 0) {
     await db.varios('INSERT INTO usuarios (usuario, nombre, rol, clave) VALUES ?', [
@@ -167,7 +181,7 @@ try {
 } catch (e) {
   console.error(
     `No se pudo preparar la base de datos MySQL "${BASE}" en ${conexion.host}:${conexion.port} (usuario "${conexion.user}").\n` +
-    `Revisa los datos de conexión en el archivo .env (ver .env.example).\nDetalle: ${e.message || e.code}`
+    `Revise los datos de conexión en el archivo .env (ver .env.example).\nDetalle: ${e.message || e.code}`
   );
   process.exit(1);
 }

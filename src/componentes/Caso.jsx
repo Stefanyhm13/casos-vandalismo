@@ -3,21 +3,22 @@ import { api } from '../api.js';
 import { ir } from '../App.jsx';
 import { Etiqueta, fechaLegible } from './Lista.jsx';
 import FotoOperador from './FotoOperador.jsx';
-import { idCaso, codigo4, soloDigitos } from '../../shared/campos.js';
+import { CampoFecha, CampoHora } from './CampoFecha.jsx';
+import { idCaso, codigo4, soloDigitos, NA, sinDato } from '../../shared/campos.js';
 
-// Un campo editable. Las fechas y horas abren el selector del navegador al hacer clic.
+// Un campo editable. Las fechas y las horas usan los selectores propios de la app.
 function Entrada({ campo, valor, cambiar, alSalir, lista }) {
   const comun = { id: campo.id, value: valor, onChange: (e) => cambiar(e.target.value), onBlur: alSalir, list: lista, autoComplete: lista ? 'off' : undefined };
-  const abrir = (e) => { try { e.target.showPicker?.(); } catch { /* el navegador no lo permite */ } };
   switch (campo.tipo) {
-    case 'fecha': return <input type="date" {...comun} onClick={abrir} />;
-    case 'hora': return <input type="time" {...comun} onClick={abrir} />;
+    case 'fecha': return <CampoFecha id={campo.id} value={valor} onChange={cambiar} />;
+    case 'hora': return <CampoHora id={campo.id} value={valor} onChange={cambiar} />;
     case 'area': return <textarea rows={3} {...comun} />;
     case 'opcion':
       return (
         <select {...comun}>
           <option value="">Sin diligenciar</option>
           {campo.opciones.map((o) => <option key={o}>{o}</option>)}
+          <option>{NA}</option>
         </select>
       );
     case 'codigo':
@@ -91,10 +92,12 @@ export default function Caso({ id, usuario, cfg }) {
     return () => window.removeEventListener('beforeunload', avisar);
   }, [pendientes]);
 
-  if (esNuevo && !cfg.puedeCrear(usuario.rol)) return <div className="aviso error">Tu rol no puede crear casos nuevos.</div>;
+  if (esNuevo && !cfg.puedeCrear(usuario.rol)) return <div className="aviso error">Su rol no puede crear casos nuevos.</div>;
   if (!original) return error ? <div className="aviso error">{error} <a href="#/">Volver a la lista</a></div> : <p className="suave">Cargando caso…</p>;
 
   const valor = (c) => cambios[c] ?? original[c] ?? '';
+  // Para el encabezado: un dato marcado como N/A cuenta como si no estuviera
+  const dato = (c) => (sinDato(valor(c)) ? '' : valor(c));
   const cambiar = (c, v) => {
     setAviso('');
     setCambios((prev) => {
@@ -131,7 +134,7 @@ export default function Caso({ id, usuario, cfg }) {
       if (codigo === (original.codigo_operador ?? '')) return;
       const op = await api('/operadores/' + codigo).catch(() => null);
       if (op) { cambiar('nombre_operador', op.nombre); cambiar('cedula_operador', op.cedula); }
-      setNota((n) => ({ ...n, codigo_operador: op ? '' : 'No está en el listado de operadores. Escribe el nombre y el documento.' }));
+      setNota((n) => ({ ...n, codigo_operador: op ? '' : 'No está en el listado de operadores. Escriba el nombre y el documento.' }));
     }
     // Al salir del documento: trae el código y el nombre del operador
     if (campo.id === 'cedula_operador') {
@@ -140,19 +143,19 @@ export default function Caso({ id, usuario, cfg }) {
       const op = await api('/operadores/cedula/' + cedula).catch(() => null);
       if (op?.codigo) cambiar('codigo_operador', op.codigo);
       if (op?.nombre) cambiar('nombre_operador', op.nombre);
-      setNota((n) => ({ ...n, cedula_operador: op ? '' : 'No se encontró este documento. Escribe el código y el nombre.', ...(op?.codigo ? { codigo_operador: '' } : {}) }));
+      setNota((n) => ({ ...n, cedula_operador: op ? '' : 'No se encontró este documento. Escriba el código y el nombre.', ...(op?.codigo ? { codigo_operador: '' } : {}) }));
     }
     if (campo.id === 'numero_bus') {
       const numero = sinCeros(valor('numero_bus'));
       const bus = buses.find((b) => b.numero === numero);
       if (bus) cambiar('numero_bus', numero); // "001" queda como "1", igual que en el listado
-      setNota((n) => ({ ...n, numero_bus: !numero || bus || !buses.length ? '' : 'No está en el listado de buses. Escribe la placa.' }));
+      setNota((n) => ({ ...n, numero_bus: !numero || bus || !buses.length ? '' : 'No está en el listado de buses. Escriba la placa.' }));
     }
     if (campo.id === 'placa_bus') {
       const placa = soloPlaca(valor('placa_bus'));
       const bus = buses.find((b) => b.placa === placa);
       if (bus) cambiar('placa_bus', placa);
-      setNota((n) => ({ ...n, placa_bus: !placa || bus || !buses.length ? '' : 'No está en el listado de buses. Escribe el número.' }));
+      setNota((n) => ({ ...n, placa_bus: !placa || bus || !buses.length ? '' : 'No está en el listado de buses. Escriba el número.' }));
     }
   };
 
@@ -175,7 +178,7 @@ export default function Caso({ id, usuario, cfg }) {
     }
   };
 
-  const volver = () => { if (!pendientes || confirm('Tienes cambios sin guardar. ¿Salir de todas formas?')) ir(''); };
+  const volver = () => { if (!pendientes || confirm('Tiene cambios sin guardar. ¿Desea salir de todas formas?')) ir(''); };
   const eliminar = async () => {
     if (!confirm(`¿Eliminar definitivamente el caso ${idCaso(id)}? Esta acción no se puede deshacer.`)) return;
     await api('/casos/' + id, { metodo: 'DELETE' }).then(() => ir('')).catch((e) => setError(e.message));
@@ -188,26 +191,28 @@ export default function Caso({ id, usuario, cfg }) {
     .map((s) => (esNuevo ? { ...s, campos: s.campos.filter(edita) } : s))
     .filter((s) => s.campos.length);
   const editaAlgo = secciones.some((s) => s.campos.some(edita));
+  // Campos que esta persona puede llenar y están vacíos: al guardar quedan como N/A
+  const vacios = secciones.flatMap((s) => s.campos).filter((c) => edita(c) && !valor(c.id)).length;
 
   return (
     <div className="caso">
       <button className="boton fantasma volver" onClick={volver}>← Volver a la lista</button>
       <div className="encabezado tarjeta ficha">
-        <FotoOperador cedula={valor('cedula_operador')} nombre={valor('nombre_operador')} />
+        <FotoOperador cedula={dato('cedula_operador')} nombre={dato('nombre_operador')} />
         <div className="ficha-datos">
           <h1>{esNuevo ? 'Nuevo caso' : <>Caso <span className="id">{idCaso(id)}</span></>}</h1>
-          <p className="operador">{valor('nombre_operador') || 'Operador sin registrar'}</p>
+          <p className="operador">{dato('nombre_operador') || 'Operador sin registrar'}</p>
           <p className="suave">
-            {[valor('codigo_operador') && 'Código ' + valor('codigo_operador'), valor('cedula_operador') && 'Documento ' + valor('cedula_operador')].filter(Boolean).join(' · ')}
-            {!esNuevo && <> {original.tipo_dano && <Etiqueta valor={original.tipo_dano} />} {original.estado && <Etiqueta valor={original.estado} />}</>}
+            {[dato('codigo_operador') && 'Código ' + dato('codigo_operador'), dato('cedula_operador') && 'Documento ' + dato('cedula_operador')].filter(Boolean).join(' · ')}
+            {!esNuevo && <> {!sinDato(original.tipo_dano) && <Etiqueta valor={original.tipo_dano} />} {!sinDato(original.estado) && <Etiqueta valor={original.estado} />}</>}
           </p>
           {!esNuevo && <CasosOperador key={(original.cedula_operador || '') + '/' + (original.codigo_operador || '')} id={id} />}
-          {esNuevo && <p className="suave">Ningún campo es obligatorio: llena lo que tengas y completa el resto después. El ID se asigna al guardar.</p>}
+          {esNuevo && <p className="suave">Ningún campo es obligatorio: diligencie lo que tenga. Los campos que deje vacíos quedan como N/A y se pueden corregir después. El ID se asigna al guardar.</p>}
         </div>
         {!esNuevo && usuario.rol === 'ADMIN' && <button className="boton peligro" onClick={eliminar}>Eliminar caso</button>}
       </div>
 
-      {!esNuevo && !editaAlgo && <div className="aviso info">Tu usuario es de solo consulta: puedes ver toda la información, pero no modificarla.</div>}
+      {!esNuevo && !editaAlgo && <div className="aviso info">Su usuario es de solo consulta: puede ver toda la información, pero no modificarla.</div>}
 
       {secciones.map((s) => {
         const cuantos = s.campos.filter(edita).length;
@@ -216,8 +221,8 @@ export default function Caso({ id, usuario, cfg }) {
             <header>
               <h2>{s.titulo}</h2>
               <span className={'permiso ' + (cuantos ? 'si' : 'no')}>
-                {cuantos === s.campos.length ? '✎ Puedes editar'
-                  : cuantos ? `✎ Puedes editar ${cuantos} de ${s.campos.length} campos`
+                {cuantos === s.campos.length ? '✎ Puede editar'
+                  : cuantos ? `✎ Puede editar ${cuantos} de ${s.campos.length} campos`
                   : `🔒 Solo lectura · lo diligencia ${cfg.roles[s.rol]}`}
               </span>
             </header>
@@ -263,12 +268,13 @@ export default function Caso({ id, usuario, cfg }) {
         <div className={'guardar' + (pendientes ? ' activo' : '')}>
           <span>
             {error ? <span className="txt-error">{error}</span>
-              : pendientes ? `Tienes ${Object.keys(cambios).length} campo(s) sin guardar`
+              : pendientes ? `Tiene ${Object.keys(cambios).length} campo(s) sin guardar`
               : aviso ? <span className="txt-ok">✓ {aviso}</span>
               : 'Sin cambios pendientes'}
+            {vacios > 0 && <small className="suave">Al guardar, {vacios === 1 ? 'el campo que deje vacío quedará' : `los ${vacios} campos que deje vacíos quedarán`} como N/A.</small>}
           </span>
           {pendientes && !esNuevo && <button className="boton fantasma" onClick={() => { setCambios({}); setNota({}); }}>Descartar</button>}
-          <button className="boton primario grande" disabled={guardando || (!pendientes && !esNuevo)} onClick={guardar}>
+          <button className="boton primario grande" disabled={guardando || (!pendientes && !esNuevo && !vacios)} onClick={guardar}>
             {guardando ? 'Guardando…' : esNuevo ? 'Crear caso' : 'Guardar cambios'}
           </button>
         </div>

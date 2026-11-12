@@ -4,7 +4,10 @@ import FormularioRol from './FormularioRol.jsx';
 
 export default function Usuarios({ yo, cfg, alCambiarRoles }) {
   const [lista, setLista] = useState([]);
-  const [nuevo, setNuevo] = useState({ usuario: '', nombre: '', rol: '' });
+  const [nuevo, setNuevo] = useState({ usuario: '', nombre: '', rol: '', correo: '' });
+  // ¿El servidor tiene configurado el envío de correos? (null = aún no se sabe)
+  const [correoActivo, setCorreoActivo] = useState(null);
+  useEffect(() => { api('/correo').then((r) => setCorreoActivo(r.activo)).catch(() => {}); }, []);
   const [error, setError] = useState('');
   const [aviso, setAviso] = useState('');
   // Ventana de rol: null = cerrada, { rol } = modificar, { paraNuevo: true } = crear desde el formulario de usuario
@@ -17,7 +20,7 @@ export default function Usuarios({ yo, cfg, alCambiarRoles }) {
     alCambiarRoles({ roles: r.roles, campos: r.campos });
     if (ventanaRol.paraNuevo) setNuevo((n) => ({ ...n, rol: r.id }));
     setError('');
-    setAviso(ventanaRol.rol ? 'Rol actualizado' : 'Rol creado. Ya puedes asignarlo a los usuarios.');
+    setAviso(ventanaRol.rol ? 'Rol actualizado' : 'Rol creado. Ya puede asignarlo a los usuarios.');
     setVentanaRol(null);
   };
   const eliminarRol = async (r) => {
@@ -54,7 +57,7 @@ export default function Usuarios({ yo, cfg, alCambiarRoles }) {
     e.preventDefault();
     const ok = await hacer(api('/usuarios', { metodo: 'POST', datos: nuevo }),
       (r) => `Usuario "${nuevo.usuario}" creado. Contraseña temporal: ${r.claveTemporal} (se le pedirá cambiarla al ingresar).`);
-    if (ok) setNuevo({ usuario: '', nombre: '', rol: '' });
+    if (ok) setNuevo({ usuario: '', nombre: '', rol: '', correo: '' });
   };
   const editar = (u, datos, mensaje) => hacer(api('/usuarios/' + u.id, { metodo: 'PATCH', datos }), mensaje);
 
@@ -64,7 +67,13 @@ export default function Usuarios({ yo, cfg, alCambiarRoles }) {
         <div>
           <h1>Usuarios</h1>
           <p className="suave">Cada persona entra con su propio usuario. El rol define qué parte del caso puede modificar.</p>
+          <p className="suave">A quien tenga correo registrado le llega un aviso cada vez que se crea un caso, para que diligencie su parte.</p>
         </div>
+        {correoActivo && (
+          <button className="boton fantasma" onClick={() => hacer(api('/correo/prueba', { metodo: 'POST' }), (r) => `Correo de prueba enviado a ${r.correo}`)}>
+            Enviar correo de prueba
+          </button>
+        )}
       </div>
 
       <form className="tarjeta filtros" onSubmit={crear}>
@@ -73,6 +82,9 @@ export default function Usuarios({ yo, cfg, alCambiarRoles }) {
         </label>
         <label>Usuario para ingresar
           <input value={nuevo.usuario} placeholder="ej.: maria.perez" onChange={(e) => setNuevo({ ...nuevo, usuario: e.target.value.toLowerCase().replace(/\s/g, '') })} />
+        </label>
+        <label>Correo <small className="suave">(opcional)</small>
+          <input type="email" value={nuevo.correo} placeholder="nombre@empresa.com" onChange={(e) => setNuevo({ ...nuevo, correo: e.target.value.trim() })} />
         </label>
         <label>Rol
           <select value={nuevo.rol} onChange={(e) => elegirRol(e.target.value)}>
@@ -84,17 +96,26 @@ export default function Usuarios({ yo, cfg, alCambiarRoles }) {
         <button className="boton primario" disabled={!nuevo.nombre || !nuevo.usuario || !nuevo.rol}>+ Crear usuario</button>
       </form>
 
+      {correoActivo === false && (
+        <div className="aviso info">El envío de correos aún no está configurado en el servidor. Los correos quedan guardados y los avisos se empezarán a enviar cuando se configure.</div>
+      )}
       {error && <div className="aviso error">{error}</div>}
       {aviso && <div className="aviso ok">{aviso}</div>}
 
       <div className="tarjeta tabla-caja">
         <table className="sin-clic">
-          <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr><th>Nombre</th><th>Usuario</th><th>Correo</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
           <tbody>
             {lista.map((u) => (
               <tr key={u.id} className={u.activo ? '' : 'inactivo'}>
                 <td>{u.nombre}</td>
                 <td>{u.usuario}</td>
+                <td>
+                  {/* Se guarda al salir del campo */}
+                  <input type="email" key={u.correo} defaultValue={u.correo} placeholder="Sin correo" aria-label={'Correo de ' + u.nombre}
+                    onBlur={(e) => e.target.value.trim() !== u.correo && editar(u, { correo: e.target.value }, `Correo de ${u.nombre} actualizado`)}
+                    onKeyDown={(e) => e.key === 'Enter' && e.target.blur()} />
+                </td>
                 <td>
                   <select value={u.rol} disabled={u.id === yo.id} onChange={(e) => editar(u, { rol: e.target.value }, `Rol de ${u.nombre} actualizado`)}>
                     {Object.entries(ROLES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -119,7 +140,7 @@ export default function Usuarios({ yo, cfg, alCambiarRoles }) {
       <div className="encabezado roles">
         <div>
           <h2>Roles creados</h2>
-          <p className="suave">Si los roles que vienen con la aplicación no te sirven, crea uno y elige qué puede ver o editar.</p>
+          <p className="suave">Si los roles que vienen con la aplicación no le sirven, cree uno y elija qué puede ver o editar.</p>
         </div>
         <button className="boton fantasma" onClick={() => setVentanaRol({})}>+ Crear rol</button>
       </div>

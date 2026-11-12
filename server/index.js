@@ -5,7 +5,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { db, asegurarColumnas, cifrarClave, claveCorrecta, CLAVE_INICIAL } from './db.js';
 import { operadoresEnReportes } from './reportes.js';
-import { armar, TIPOS_NUEVOS, normalizar, codigo4, soloDigitos } from '../shared/campos.js';
+import { libroDeCasos } from './exportar.js';
+import { avisarCasoNuevo, correoActivo, correoValido, enviarPrueba } from './correo.js';
+import { armar, TIPOS_NUEVOS, normalizar, codigo4, soloDigitos, NA, sinDato } from '../shared/campos.js';
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -22,7 +24,7 @@ async function leerConfig() {
 }
 let cfg = await leerConfig();
 
-const publico = (u) => ({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol, debe_cambiar: !!u.debe_cambiar, activo: !!u.activo });
+const publico = (u) => ({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol, correo: u.correo, debe_cambiar: !!u.debe_cambiar, activo: !!u.activo });
 
 // ---------- Sesión ----------
 app.post('/api/login', async (req, res) => {
@@ -43,7 +45,7 @@ app.use('/api', async (req, res, next) => {
     'SELECT u.* FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ? AND s.expira > ? AND u.activo = 1',
     [token, Date.now()]
   );
-  if (!u) return error(res, 401, 'Tu sesión terminó. Ingresa de nuevo.');
+  if (!u) return error(res, 401, 'Su sesión terminó. Ingrese de nuevo.');
   req.usuario = u;
   req.token = token;
   next();
@@ -69,7 +71,7 @@ app.post('/api/cambiar-clave', async (req, res) => {
 
 // Mientras tenga clave temporal no puede usar el resto de la app
 app.use('/api', (req, res, next) =>
-  req.usuario.debe_cambiar ? error(res, 403, 'Debes cambiar tu contraseña temporal') : next());
+  req.usuario.debe_cambiar ? error(res, 403, 'Debe cambiar su contraseña temporal') : next());
 
 // ---------- Listados de apoyo (autocompletar) ----------
 // El operador se busca primero en la base Reportes de la empresa. El listado importado del Excel
@@ -104,9 +106,13 @@ app.get('/api/buses', async (req, res) => {
 
 // ---------- Casos ----------
 const LIMITE = 200;
-app.get('/api/casos', async (req, res) => {
-  const q = String(req.query.q ?? '').trim();
-  const por = String(req.query.por ?? 'todo');
+// Más recientes primero; los que quedaron sin fecha (N/A) van al final.
+const ORDEN = `ORDER BY (fecha_novedad = '${NA}'), fecha_novedad DESC, hora DESC, id DESC`;
+
+// Convierte los filtros de la lista (búsqueda, estado, tipo de daño, año y mes) en un WHERE.
+function filtroCasos(f = {}) {
+  const q = String(f.q ?? '').trim();
+  const por = String(f.por ?? 'todo');
   const donde = [];
   const params = [];
   if (q) {
@@ -129,19 +135,42 @@ app.get('/api/casos', async (req, res) => {
     (opciones[por] ?? opciones.todo)();
   }
   for (const filtro of ['estado', 'tipo_dano']) {
-    const v = String(req.query[filtro] ?? '');
-    if (v === '(vacio)') donde.push(`${filtro} = ''`);
+    const v = String(f[filtro] ?? '');
+    if (v === '(vacio)') donde.push(`${filtro} IN ('', '${NA}')`);
     else if (v) { donde.push(`${filtro} = ?`); params.push(v); }
   }
-  const where = donde.length ? 'WHERE ' + donde.join(' AND ') : '';
+  // Año y mes de la novedad (la fecha se guarda como AAAA-MM-DD)
+  const anio = /^\d{4}$/.test(f.anio) ? f.anio : '';
+  const mes = /^(0[1-9]|1[0-2])$/.test(f.mes) ? f.mes : '';
+  if (anio || mes) { donde.push('fecha_novedad LIKE ?'); params.push(`${anio || '____'}-${mes || '__'}-%`); }
+  return { where: donde.length ? 'WHERE ' + donde.join(' AND ') : '', params };
+}
+
+app.get('/api/casos', async (req, res) => {
+  const { where, params } = filtroCasos(req.query);
   const total = (await db.uno(`SELECT COUNT(*) n FROM casos ${where}`, params)).n;
   const casos = await db.todos(
     `SELECT id, fecha_novedad, hora, lugar, codigo_operador, nombre_operador, cedula_operador,
             numero_bus, placa_bus, tipo_dano, estado
-     FROM casos ${where} ORDER BY fecha_novedad DESC, hora DESC, id DESC LIMIT ${LIMITE}`,
+     FROM casos ${where} ${ORDEN} LIMIT ${LIMITE}`,
     params
   );
-  res.json({ total, casos });
+  // Años que tienen casos, para el filtro
+  const anios = (await db.todos(
+    "SELECT DISTINCT LEFT(fecha_novedad, 4) a FROM casos WHERE fecha_novedad REGEXP '^[0-9]{4}-' ORDER BY a DESC"
+  )).map((f) => f.a);
+  res.json({ total, casos, anios });
+});
+
+// Excel con los casos marcados ({ ids }) o con todos los que cumplen los filtros ({ filtros }).
+app.post('/api/casos/exportar', async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : null;
+  if (ids && !ids.length) return error(res, 400, 'Marque al menos un caso para exportar');
+  const { where, params } = ids ? { where: 'WHERE id IN (?)', params: [ids] } : filtroCasos(req.body?.filtros);
+  const casos = await db.todos(`SELECT * FROM casos ${where} ${ORDEN}`, params);
+  if (!casos.length) return error(res, 400, 'No hay casos para exportar');
+  res.type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(await libroDeCasos(casos, cfg, req.usuario));
 });
 
 const buscarCaso = (id) => db.uno('SELECT * FROM casos WHERE id = ?', [Number(id) || -1]);
@@ -160,12 +189,20 @@ function cambiosPermitidos(usuario, cuerpo, actual = {}) {
     const nuevo = normalizar(campo, valor);
     if (nuevo === (actual[id] ?? '')) continue;
     if (!cfg.puedeEditar(usuario.rol, id)) {
-      return { prohibido: `No tienes permiso para modificar "${campo.etiqueta}". Ese campo lo diligencia ${cfg.roles[campo.rol]}.` };
+      return { prohibido: `No tiene permiso para modificar "${campo.etiqueta}". Ese campo lo diligencia ${cfg.roles[campo.rol]}.` };
     }
     cambios[id] = nuevo;
   }
   return { cambios };
 }
+// Al guardar, los campos que la persona puede diligenciar y dejó vacíos quedan como "N/A".
+// Los de otras áreas no se tocan: siguen pendientes para su responsable. Devuelve los que marcó.
+function vaciosComoNA(usuario, cambios, actual = {}) {
+  const marcados = Object.keys(cfg.campos).filter((id) => cfg.puedeEditar(usuario.rol, id) && (cambios[id] ?? actual[id] ?? '') === '');
+  for (const id of marcados) cambios[id] = NA;
+  return marcados;
+}
+const nombres = (ids) => ids.map((c) => cfg.campos[c].etiqueta).join(', ');
 const registrar = (casoId, u, texto) =>
   db.ejecutar('INSERT INTO historial (caso_id, usuario, rol, detalle) VALUES (?, ?, ?, ?)', [casoId, u.nombre, cfg.roles[u.rol] ?? u.rol, texto]);
 
@@ -178,8 +215,8 @@ app.get('/api/casos/:id', async (req, res) => {
 app.get('/api/casos/:id/operador', async (req, res) => {
   const caso = await buscarCaso(req.params.id);
   if (!caso) return error(res, 404, 'No existe un caso con ese ID');
-  const [columna, valor] = caso.cedula_operador ? ['cedula_operador', caso.cedula_operador]
-    : caso.codigo_operador ? ['codigo_operador', caso.codigo_operador] : ['id', caso.id];
+  const [columna, valor] = !sinDato(caso.cedula_operador) ? ['cedula_operador', caso.cedula_operador]
+    : !sinDato(caso.codigo_operador) ? ['codigo_operador', caso.codigo_operador] : ['id', caso.id];
   res.json(await db.todos(
     `SELECT id, fecha_novedad, tipo_dano, estado FROM casos WHERE ${columna} = ? ORDER BY fecha_novedad DESC, id DESC`,
     [valor]
@@ -187,16 +224,26 @@ app.get('/api/casos/:id/operador', async (req, res) => {
 });
 
 app.post('/api/casos', async (req, res) => {
-  if (!cfg.puedeCrear(req.usuario.rol)) return error(res, 403, 'Tu rol no puede crear casos nuevos');
+  if (!cfg.puedeCrear(req.usuario.rol)) return error(res, 403, 'Su rol no puede crear casos nuevos');
   const { cambios, prohibido } = cambiosPermitidos(req.usuario, req.body);
   if (prohibido) return error(res, 403, prohibido);
+  vaciosComoNA(req.usuario, cambios);
   const cols = Object.keys(cambios);
   const r = await db.ejecutar(
     `INSERT INTO casos (creado_por${cols.map((c) => ', ' + c).join('')}) VALUES (?${', ?'.repeat(cols.length)})`,
     [req.usuario.nombre, ...Object.values(cambios)]
   );
   await registrar(r.insertId, req.usuario, 'Creó el caso');
-  res.status(201).json(await detalle(await buscarCaso(r.insertId)));
+  const caso = await buscarCaso(r.insertId);
+  res.status(201).json(await detalle(caso));
+  // Aviso por correo a quienes deben completar el caso (no detiene la respuesta)
+  if (correoActivo()) {
+    const usuarios = await db.todos("SELECT nombre, correo, rol FROM usuarios WHERE activo = 1 AND correo <> '' AND id <> ?", [req.usuario.id]);
+    const destinatarios = usuarios
+      .filter((u) => Object.keys(cfg.campos).some((id) => cfg.puedeEditar(u.rol, id)))
+      .map((u) => ({ nombre: u.nombre, correo: u.correo, area: cfg.roles[u.rol] ?? 'su área' }));
+    avisarCasoNuevo(caso, req.usuario, destinatarios).catch((e) => console.error('Aviso por correo:', e.message));
+  }
 });
 
 app.patch('/api/casos/:id', async (req, res) => {
@@ -204,10 +251,15 @@ app.patch('/api/casos/:id', async (req, res) => {
   if (!caso) return error(res, 404, 'No existe un caso con ese ID');
   const { cambios, prohibido } = cambiosPermitidos(req.usuario, req.body, caso);
   if (prohibido) return error(res, 403, prohibido);
+  const modificados = Object.keys(cambios).filter((c) => cambios[c] !== '');
+  const marcados = vaciosComoNA(req.usuario, cambios, caso);
   const cols = Object.keys(cambios);
   if (cols.length) {
     await db.ejecutar(`UPDATE casos SET ${cols.map((c) => c + ' = ?').join(', ')} WHERE id = ?`, [...Object.values(cambios), caso.id]);
-    await registrar(caso.id, req.usuario, 'Modificó: ' + cols.map((c) => cfg.campos[c].etiqueta).join(', '));
+    await registrar(caso.id, req.usuario, [
+      modificados.length && 'Modificó: ' + nombres(modificados),
+      marcados.length && 'Dejó como N/A: ' + nombres(marcados),
+    ].filter(Boolean).join('. '));
   }
   res.json(await detalle(await buscarCaso(caso.id)));
 });
@@ -221,15 +273,15 @@ app.delete('/api/casos/:id', soloAdmin, async (req, res) => {
 });
 
 // Casos a los que les falta llenar algún campo de los que este usuario puede diligenciar
-// (el administrador: todos los campos). Incluye la lista de campos que faltan; más recientes primero.
+// (el administrador: todos los campos). Incluye la lista de campos que faltan; primero el que lleva más días pendiente.
 app.get('/api/casos-incompletos', async (req, res) => {
   const ids = Object.keys(cfg.campos).filter((id) => cfg.puedeEditar(req.usuario.rol, id));
   if (!ids.length) return res.json([]);
   const casos = await db.todos(
-    `SELECT * FROM casos WHERE ${ids.map((c) => `${c} = ''`).join(' OR ')} ORDER BY fecha_novedad DESC, id DESC`
+    `SELECT * FROM casos WHERE ${ids.map((c) => `${c} = ''`).join(' OR ')} ORDER BY creado_en, id`
   );
   res.json(casos.map((c) => ({
-    id: c.id, nombre_operador: c.nombre_operador, fecha_novedad: c.fecha_novedad, faltan: ids.filter((id) => !c[id]),
+    id: c.id, nombre_operador: c.nombre_operador, fecha_novedad: c.fecha_novedad, creado_en: c.creado_en, faltan: ids.filter((id) => !c[id]),
   })));
 });
 
@@ -241,11 +293,13 @@ app.post('/api/usuarios', soloAdmin, async (req, res) => {
   const usuario = String(req.body?.usuario ?? '').trim().toLowerCase();
   const nombre = String(req.body?.nombre ?? '').trim();
   const rol = String(req.body?.rol ?? '');
+  const correo = String(req.body?.correo ?? '').trim().toLowerCase();
   if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) return error(res, 400, 'El usuario debe tener entre 3 y 30 letras o números, sin espacios');
-  if (!nombre) return error(res, 400, 'Escribe el nombre de la persona');
-  if (!cfg.roles[rol]) return error(res, 400, 'Elige un rol');
+  if (!nombre) return error(res, 400, 'Escriba el nombre de la persona');
+  if (!cfg.roles[rol]) return error(res, 400, 'Elija un rol');
+  if (correo && !correoValido(correo)) return error(res, 400, 'El correo no es válido');
   if (await db.uno('SELECT 1 FROM usuarios WHERE usuario = ?', [usuario])) return error(res, 400, 'Ya existe ese nombre de usuario');
-  await db.ejecutar('INSERT INTO usuarios (usuario, nombre, rol, clave) VALUES (?, ?, ?, ?)', [usuario, nombre, rol, cifrarClave(CLAVE_INICIAL)]);
+  await db.ejecutar('INSERT INTO usuarios (usuario, nombre, rol, correo, clave) VALUES (?, ?, ?, ?, ?)', [usuario, nombre, rol, correo, cifrarClave(CLAVE_INICIAL)]);
   res.status(201).json({ ok: true, claveTemporal: CLAVE_INICIAL });
 });
 
@@ -253,11 +307,14 @@ app.patch('/api/usuarios/:id', soloAdmin, async (req, res) => {
   const u = await db.uno('SELECT * FROM usuarios WHERE id = ?', [Number(req.params.id) || -1]);
   if (!u) return error(res, 404, 'Usuario no encontrado');
   const { nombre, rol, activo, restablecerClave } = req.body ?? {};
+  const correo = req.body?.correo === undefined ? undefined : String(req.body.correo).trim().toLowerCase();
+  if (correo && !correoValido(correo)) return error(res, 400, 'El correo no es válido');
   const esMismo = u.id === req.usuario.id;
-  if (esMismo && (activo === false || (rol && rol !== 'ADMIN'))) return error(res, 400, 'No puedes quitarte tu propio acceso de administrador');
+  if (esMismo && (activo === false || (rol && rol !== 'ADMIN'))) return error(res, 400, 'No puede quitarse su propio acceso de administrador');
   if (rol !== undefined && !cfg.roles[rol]) return error(res, 400, 'Rol no válido');
   if (nombre !== undefined && String(nombre).trim()) await db.ejecutar('UPDATE usuarios SET nombre = ? WHERE id = ?', [String(nombre).trim(), u.id]);
   if (rol !== undefined) await db.ejecutar('UPDATE usuarios SET rol = ? WHERE id = ?', [rol, u.id]);
+  if (correo !== undefined) await db.ejecutar('UPDATE usuarios SET correo = ? WHERE id = ?', [correo, u.id]);
   if (activo !== undefined) {
     await db.ejecutar('UPDATE usuarios SET activo = ? WHERE id = ?', [activo ? 1 : 0, u.id]);
     if (!activo) await db.ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', [u.id]);
@@ -269,11 +326,24 @@ app.patch('/api/usuarios/:id', soloAdmin, async (req, res) => {
   res.json({ ok: true, claveTemporal: restablecerClave ? CLAVE_INICIAL : undefined });
 });
 
+// Estado del envío de correos y correo de prueba (para comprobar los datos SMTP_* del .env)
+app.get('/api/correo', soloAdmin, (req, res) => res.json({ activo: correoActivo() }));
+app.post('/api/correo/prueba', soloAdmin, async (req, res) => {
+  if (!correoActivo()) return error(res, 400, 'El envío de correos no está configurado en el servidor (datos SMTP_* del archivo .env)');
+  if (!req.usuario.correo) return error(res, 400, 'Primero escriba su propio correo en la lista de usuarios');
+  try {
+    await enviarPrueba(req.usuario);
+    res.json({ ok: true, correo: req.usuario.correo });
+  } catch (e) {
+    error(res, 502, 'El servidor de correo rechazó el envío: ' + e.message);
+  }
+});
+
 // ---------- Roles creados por el administrador ----------
 // Revisa lo que llega del formulario de rol. Devuelve { falla } o los datos limpios.
 function leerRol(cuerpo, idActual) {
   const nombre = String(cuerpo?.nombre ?? '').trim().slice(0, 60);
-  if (!nombre) return { falla: 'Escribe el nombre del rol' };
+  if (!nombre) return { falla: 'Escriba el nombre del rol' };
   if (Object.entries(cfg.roles).some(([id, n]) => id !== idActual && n.toLowerCase() === nombre.toLowerCase())) {
     return { falla: 'Ya existe un rol con ese nombre' };
   }
@@ -283,9 +353,9 @@ function leerRol(cuerpo, idActual) {
   for (const p of lista(cuerpo.propios)) {
     const etiqueta = String(p?.etiqueta ?? '').trim().slice(0, 80);
     if (!etiqueta) return { falla: 'Cada campo nuevo necesita un nombre' };
-    if (!TIPOS_NUEVOS[p.tipo]) return { falla: `Elige el tipo del campo "${etiqueta}"` };
+    if (!TIPOS_NUEVOS[p.tipo]) return { falla: `Elija el tipo del campo "${etiqueta}"` };
     const opciones = p.tipo === 'opcion' ? [...new Set(lista(p.opciones).map((o) => String(o).trim()).filter(Boolean))] : [];
-    if (p.tipo === 'opcion' && opciones.length < 2) return { falla: `Escribe al menos dos opciones para "${etiqueta}"` };
+    if (p.tipo === 'opcion' && opciones.length < 2) return { falla: `Escriba al menos dos opciones para "${etiqueta}"` };
     propios.push({ id: p.id, etiqueta, tipo: p.tipo, opciones });
   }
   return { nombre, campos, propios, puede_crear: cuerpo.puede_crear ? 1 : 0 };
@@ -352,7 +422,7 @@ app.delete('/api/roles/:id', soloAdmin, async (req, res) => {
   const rol = cfg.rolesExtra.find((r) => r.id === req.params.id);
   if (!rol) return error(res, 404, 'Rol no encontrado');
   const n = (await db.uno('SELECT COUNT(*) n FROM usuarios WHERE rol = ?', [rol.id])).n;
-  if (n) return error(res, 400, `Hay ${n} usuario(s) con este rol. Cámbiales el rol antes de eliminarlo.`);
+  if (n) return error(res, 400, `Hay ${n} usuario(s) con este rol. Cámbieles el rol antes de eliminarlo.`);
   await enBloque(async (t) => {
     await guardarPropios(t, rol.id, []);
     await t.ejecutar('DELETE FROM roles WHERE id = ?', [Number(rol.id.slice(4))]);

@@ -62,7 +62,7 @@ export default function FormularioRol({ cfg, rol, alGuardar, alCerrar }) {
           </label>
           <label className="casilla">
             <input type="radio" name="modo" checked={modo === 'editar'} onChange={() => setModo('editar')} />
-            <span>Ver y editar <small className="suave">Ve todo y modifica solo los campos que elijas abajo.</small></span>
+            <span>Ver y editar <small className="suave">Ve todo y modifica solo los campos que usted elija abajo.</small></span>
           </label>
         </div>
 

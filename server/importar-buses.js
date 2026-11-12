@@ -7,7 +7,7 @@ import { db } from './db.js';
 
 const ruta = process.argv[2];
 if (!ruta) {
-  console.error('Indica la ruta del Excel:  npm run importar-buses -- "Placas Unidad SAO6.xlsx"');
+  console.error('Indique la ruta del Excel:  npm run importar-buses -- "Placas Unidad SAO6.xlsx"');
   process.exit(1);
 }
 
