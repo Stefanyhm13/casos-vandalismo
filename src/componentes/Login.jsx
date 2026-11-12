@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, guardarToken } from '../api.js';
+import CampoClave from './CampoClave.jsx';
 
 export default function Login({ alEntrar }) {
   const [usuario, setUsuario] = useState('');
@@ -39,7 +40,7 @@ export default function Login({ alEntrar }) {
         </label>
         <label>
           Contraseña
-          <input type="password" value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" />
+          <CampoClave value={clave} onChange={(e) => setClave(e.target.value)} autoComplete="current-password" />
         </label>
         {error && <div className="aviso error">{error}</div>}
         <button className="boton primario grande" disabled={enviando || !usuario || !clave}>

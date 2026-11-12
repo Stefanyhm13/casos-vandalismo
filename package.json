@@ -12,11 +12,14 @@
     "build": "vite build",
     "start": "node server/index.js",
     "importar": "node server/importar.js",
-    "importar-buses": "node server/importar-buses.js"
+    "importar-buses": "node server/importar-buses.js",
+    "migrar-mysql": "node server/migrar-a-mysql.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
     "express": "^5.3.0",
+    "mssql": "^12.7.14",
+    "mysql2": "^3.24.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

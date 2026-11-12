@@ -81,6 +81,11 @@ input:hover, select:hover, textarea:hover { border-color: rgba(23, 60, 38, 0.4);
 textarea { resize: vertical; }
 input:focus, select:focus, textarea:focus, .boton:focus-visible, tr:focus-visible { outline: 3px solid rgba(37, 160, 85, 0.32); border-color: var(--verde); background: #fff; }
 input[type="date"], input[type="time"] { cursor: pointer; }
+.campo-clave { position: relative; display: block; }
+.campo-clave input { padding-right: 46px; }
+.campo-clave button { position: absolute; top: 50%; right: 5px; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 10px; background: none; color: var(--gris); cursor: pointer; }
+.campo-clave button:hover { color: var(--verde-osc); background: var(--verde-suave); }
+.campo-clave button:focus-visible { outline: 3px solid rgba(37, 160, 85, 0.32); color: var(--verde-osc); }
 .boton { font: inherit; font-weight: 600; padding: 9px 17px; border-radius: 13px; border: 1px solid transparent; cursor: pointer; white-space: nowrap; transition: opacity 0.2s, background 0.2s, transform 0.15s, box-shadow 0.2s; }
 .boton:active:not(:disabled) { transform: scale(0.98); }
 .boton:disabled { opacity: 0.5; cursor: not-allowed; }

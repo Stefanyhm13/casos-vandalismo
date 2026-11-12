@@ -3,7 +3,8 @@ import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { db, cifrarClave, claveCorrecta, CLAVE_INICIAL } from './db.js';
+import { db, asegurarColumnas, cifrarClave, claveCorrecta, CLAVE_INICIAL } from './db.js';
+import { operadoresEnReportes } from './reportes.js';
 import { armar, TIPOS_NUEVOS, normalizar, codigo4, soloDigitos } from '../shared/campos.js';
 
 const app = express();
@@ -12,35 +13,36 @@ app.use(express.json({ limit: '1mb' }));
 const DURACION_SESION = 12 * 60 * 60 * 1000; // 12 horas
 const error = (res, estado, mensaje) => res.status(estado).json({ error: mensaje });
 // Roles y campos: lo fijo de shared/campos.js más lo creado por el administrador.
-function leerConfig() {
-  const roles = db.prepare('SELECT * FROM roles ORDER BY id').all()
+async function leerConfig() {
+  const roles = (await db.todos('SELECT * FROM roles ORDER BY id'))
     .map((r) => ({ id: 'ROL-' + r.id, nombre: r.nombre, campos: JSON.parse(r.campos), puede_crear: !!r.puede_crear }));
-  const campos = db.prepare('SELECT * FROM campos_extra ORDER BY id').all()
+  const campos = (await db.todos('SELECT * FROM campos_extra ORDER BY id'))
     .map((c) => ({ id: 'x_' + c.id, rol: c.rol, etiqueta: c.etiqueta, tipo: c.tipo, opciones: JSON.parse(c.opciones) }));
   return { crudo: { roles, campos }, ...armar(roles, campos) };
 }
-let cfg = leerConfig();
+let cfg = await leerConfig();
 
 const publico = (u) => ({ id: u.id, usuario: u.usuario, nombre: u.nombre, rol: u.rol, debe_cambiar: !!u.debe_cambiar, activo: !!u.activo });
 
 // ---------- Sesión ----------
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   const usuario = String(req.body?.usuario ?? '').trim().toLowerCase();
   const clave = String(req.body?.clave ?? '');
-  const u = db.prepare('SELECT * FROM usuarios WHERE usuario = ?').get(usuario);
+  const u = await db.uno('SELECT * FROM usuarios WHERE usuario = ?', [usuario]);
   if (!u || !u.activo || !claveCorrecta(clave, u.clave)) return error(res, 401, 'Usuario o contraseña incorrectos');
-  db.prepare('DELETE FROM sesiones WHERE expira < ?').run(Date.now());
+  await db.ejecutar('DELETE FROM sesiones WHERE expira < ?', [Date.now()]);
   const token = randomBytes(32).toString('hex');
-  db.prepare('INSERT INTO sesiones (token, usuario_id, expira) VALUES (?, ?, ?)').run(token, u.id, Date.now() + DURACION_SESION);
+  await db.ejecutar('INSERT INTO sesiones (token, usuario_id, expira) VALUES (?, ?, ?)', [token, u.id, Date.now() + DURACION_SESION]);
   res.json({ token, usuario: publico(u) });
 });
 
 // Todo lo demás en /api exige sesión
-app.use('/api', (req, res, next) => {
+app.use('/api', async (req, res, next) => {
   const token = (req.headers.authorization || '').replace(/^Bearer /, '');
-  const u = token && db.prepare(
-    'SELECT u.* FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ? AND s.expira > ? AND u.activo = 1'
-  ).get(token, Date.now());
+  const u = token && await db.uno(
+    'SELECT u.* FROM sesiones s JOIN usuarios u ON u.id = s.usuario_id WHERE s.token = ? AND s.expira > ? AND u.activo = 1',
+    [token, Date.now()]
+  );
   if (!u) return error(res, 401, 'Tu sesión terminó. Ingresa de nuevo.');
   req.usuario = u;
   req.token = token;
@@ -50,18 +52,18 @@ app.use('/api', (req, res, next) => {
 app.get('/api/yo', (req, res) => res.json(publico(req.usuario)));
 app.get('/api/config', (req, res) => res.json(cfg.crudo));
 
-app.post('/api/logout', (req, res) => {
-  db.prepare('DELETE FROM sesiones WHERE token = ?').run(req.token);
+app.post('/api/logout', async (req, res) => {
+  await db.ejecutar('DELETE FROM sesiones WHERE token = ?', [req.token]);
   res.json({ ok: true });
 });
 
-app.post('/api/cambiar-clave', (req, res) => {
+app.post('/api/cambiar-clave', async (req, res) => {
   const { actual = '', nueva = '' } = req.body ?? {};
   if (!claveCorrecta(String(actual), req.usuario.clave)) return error(res, 400, 'La contraseña actual no es correcta');
   if (String(nueva).length < 8) return error(res, 400, 'La nueva contraseña debe tener al menos 8 caracteres');
   if (nueva === actual) return error(res, 400, 'La nueva contraseña debe ser diferente a la actual');
-  db.prepare('UPDATE usuarios SET clave = ?, debe_cambiar = 0 WHERE id = ?').run(cifrarClave(String(nueva)), req.usuario.id);
-  db.prepare('DELETE FROM sesiones WHERE usuario_id = ? AND token <> ?').run(req.usuario.id, req.token);
+  await db.ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 0 WHERE id = ?', [cifrarClave(String(nueva)), req.usuario.id]);
+  await db.ejecutar('DELETE FROM sesiones WHERE usuario_id = ? AND token <> ?', [req.usuario.id, req.token]);
   res.json({ ok: true });
 });
 
@@ -70,17 +72,39 @@ app.use('/api', (req, res, next) =>
   req.usuario.debe_cambiar ? error(res, 403, 'Debes cambiar tu contraseña temporal') : next());
 
 // ---------- Listados de apoyo (autocompletar) ----------
-app.get('/api/operadores/:codigo', (req, res) => {
-  res.json(db.prepare('SELECT * FROM operadores WHERE codigo = ?').get(codigo4(req.params.codigo)) ?? null);
+// El operador se busca primero en la base Reportes de la empresa. El listado importado del Excel
+// queda de respaldo: tiene los operadores retirados (que en Reportes ya no traen código) y es el
+// que responde si ese servidor no está disponible.
+async function operador(columna, valor) {
+  if (!valor) return null;
+  const [local, encontrados] = await Promise.all([
+    db.uno(`SELECT * FROM operadores WHERE ${columna} = ?`, [valor]),
+    operadoresEnReportes(columna, valor),
+  ]);
+  const reportes = encontrados.find((o) => o.cedula === local?.cedula) || encontrados[0];
+  // Si el listado dice que ese código es de otra persona, manda Reportes
+  const listado = local && (!reportes || reportes.cedula === local.cedula) ? local : null;
+  if (!reportes && !listado) return null;
+  return {
+    codigo: reportes?.codigo || listado?.codigo || '',
+    cedula: reportes?.cedula || listado.cedula,
+    nombre: listado?.nombre || reportes.nombre, // el del listado está como "Nombres Apellidos", igual que en los casos
+  };
+}
+app.get('/api/operadores/:codigo', async (req, res) => {
+  res.json(await operador('codigo', codigo4(req.params.codigo)));
+});
+app.get('/api/operadores/cedula/:cedula', async (req, res) => {
+  res.json(await operador('cedula', soloDigitos(req.params.cedula)));
 });
 // Listado completo de buses: es corto y la app lo usa para sugerir mientras se escribe
-app.get('/api/buses', (req, res) => {
-  res.json(db.prepare('SELECT numero, placa FROM buses ORDER BY CAST(numero AS INTEGER)').all());
+app.get('/api/buses', async (req, res) => {
+  res.json(await db.todos('SELECT numero, placa FROM buses ORDER BY CAST(numero AS UNSIGNED)'));
 });
 
 // ---------- Casos ----------
 const LIMITE = 200;
-app.get('/api/casos', (req, res) => {
+app.get('/api/casos', async (req, res) => {
   const q = String(req.query.q ?? '').trim();
   const por = String(req.query.por ?? 'todo');
   const donde = [];
@@ -110,19 +134,20 @@ app.get('/api/casos', (req, res) => {
     else if (v) { donde.push(`${filtro} = ?`); params.push(v); }
   }
   const where = donde.length ? 'WHERE ' + donde.join(' AND ') : '';
-  const total = db.prepare(`SELECT COUNT(*) n FROM casos ${where}`).get(...params).n;
-  const casos = db.prepare(
+  const total = (await db.uno(`SELECT COUNT(*) n FROM casos ${where}`, params)).n;
+  const casos = await db.todos(
     `SELECT id, fecha_novedad, hora, lugar, codigo_operador, nombre_operador, cedula_operador,
             numero_bus, placa_bus, tipo_dano, estado
-     FROM casos ${where} ORDER BY fecha_novedad DESC, hora DESC, id DESC LIMIT ${LIMITE}`
-  ).all(...params);
+     FROM casos ${where} ORDER BY fecha_novedad DESC, hora DESC, id DESC LIMIT ${LIMITE}`,
+    params
+  );
   res.json({ total, casos });
 });
 
-const buscarCaso = (id) => db.prepare('SELECT * FROM casos WHERE id = ?').get(Number(id) || -1);
-const detalle = (caso) => ({
+const buscarCaso = (id) => db.uno('SELECT * FROM casos WHERE id = ?', [Number(id) || -1]);
+const detalle = async (caso) => ({
   caso,
-  historial: db.prepare('SELECT fecha, usuario, rol, detalle FROM historial WHERE caso_id = ? ORDER BY id DESC').all(caso.id),
+  historial: await db.todos('SELECT fecha, usuario, rol, detalle FROM historial WHERE caso_id = ? ORDER BY id DESC', [caso.id]),
 });
 
 // Devuelve solo los campos que el usuario tiene permiso de modificar y que realmente cambian.
@@ -142,103 +167,104 @@ function cambiosPermitidos(usuario, cuerpo, actual = {}) {
   return { cambios };
 }
 const registrar = (casoId, u, texto) =>
-  db.prepare('INSERT INTO historial (caso_id, usuario, rol, detalle) VALUES (?, ?, ?, ?)').run(casoId, u.nombre, cfg.roles[u.rol] ?? u.rol, texto);
+  db.ejecutar('INSERT INTO historial (caso_id, usuario, rol, detalle) VALUES (?, ?, ?, ?)', [casoId, u.nombre, cfg.roles[u.rol] ?? u.rol, texto]);
 
-app.get('/api/casos/:id', (req, res) => {
-  const caso = buscarCaso(req.params.id);
-  caso ? res.json(detalle(caso)) : error(res, 404, 'No existe un caso con ese ID');
+app.get('/api/casos/:id', async (req, res) => {
+  const caso = await buscarCaso(req.params.id);
+  caso ? res.json(await detalle(caso)) : error(res, 404, 'No existe un caso con ese ID');
 });
 
 // Todos los casos del mismo operador (por documento; si no tiene, por código)
-app.get('/api/casos/:id/operador', (req, res) => {
-  const caso = buscarCaso(req.params.id);
+app.get('/api/casos/:id/operador', async (req, res) => {
+  const caso = await buscarCaso(req.params.id);
   if (!caso) return error(res, 404, 'No existe un caso con ese ID');
   const [columna, valor] = caso.cedula_operador ? ['cedula_operador', caso.cedula_operador]
     : caso.codigo_operador ? ['codigo_operador', caso.codigo_operador] : ['id', caso.id];
-  res.json(db.prepare(
-    `SELECT id, fecha_novedad, tipo_dano, estado FROM casos WHERE ${columna} = ? ORDER BY fecha_novedad DESC, id DESC`
-  ).all(valor));
+  res.json(await db.todos(
+    `SELECT id, fecha_novedad, tipo_dano, estado FROM casos WHERE ${columna} = ? ORDER BY fecha_novedad DESC, id DESC`,
+    [valor]
+  ));
 });
 
-app.post('/api/casos', (req, res) => {
+app.post('/api/casos', async (req, res) => {
   if (!cfg.puedeCrear(req.usuario.rol)) return error(res, 403, 'Tu rol no puede crear casos nuevos');
   const { cambios, prohibido } = cambiosPermitidos(req.usuario, req.body);
   if (prohibido) return error(res, 403, prohibido);
   const cols = Object.keys(cambios);
-  const r = db.prepare(
-    `INSERT INTO casos (creado_por${cols.map((c) => ', ' + c).join('')}) VALUES (?${', ?'.repeat(cols.length)})`
-  ).run(req.usuario.nombre, ...Object.values(cambios));
-  const id = Number(r.lastInsertRowid);
-  registrar(id, req.usuario, 'Creó el caso');
-  res.status(201).json(detalle(buscarCaso(id)));
+  const r = await db.ejecutar(
+    `INSERT INTO casos (creado_por${cols.map((c) => ', ' + c).join('')}) VALUES (?${', ?'.repeat(cols.length)})`,
+    [req.usuario.nombre, ...Object.values(cambios)]
+  );
+  await registrar(r.insertId, req.usuario, 'Creó el caso');
+  res.status(201).json(await detalle(await buscarCaso(r.insertId)));
 });
 
-app.patch('/api/casos/:id', (req, res) => {
-  const caso = buscarCaso(req.params.id);
+app.patch('/api/casos/:id', async (req, res) => {
+  const caso = await buscarCaso(req.params.id);
   if (!caso) return error(res, 404, 'No existe un caso con ese ID');
   const { cambios, prohibido } = cambiosPermitidos(req.usuario, req.body, caso);
   if (prohibido) return error(res, 403, prohibido);
   const cols = Object.keys(cambios);
   if (cols.length) {
-    db.prepare(`UPDATE casos SET ${cols.map((c) => c + ' = ?').join(', ')} WHERE id = ?`).run(...Object.values(cambios), caso.id);
-    registrar(caso.id, req.usuario, 'Modificó: ' + cols.map((c) => cfg.campos[c].etiqueta).join(', '));
+    await db.ejecutar(`UPDATE casos SET ${cols.map((c) => c + ' = ?').join(', ')} WHERE id = ?`, [...Object.values(cambios), caso.id]);
+    await registrar(caso.id, req.usuario, 'Modificó: ' + cols.map((c) => cfg.campos[c].etiqueta).join(', '));
   }
-  res.json(detalle(buscarCaso(caso.id)));
+  res.json(await detalle(await buscarCaso(caso.id)));
 });
 
 // ---------- Solo administrador ----------
 const soloAdmin = (req, res, next) => (req.usuario.rol === 'ADMIN' ? next() : error(res, 403, 'Solo el administrador puede hacer esto'));
 
-app.delete('/api/casos/:id', soloAdmin, (req, res) => {
-  db.prepare('DELETE FROM casos WHERE id = ?').run(Number(req.params.id) || -1);
+app.delete('/api/casos/:id', soloAdmin, async (req, res) => {
+  await db.ejecutar('DELETE FROM casos WHERE id = ?', [Number(req.params.id) || -1]);
   res.json({ ok: true });
 });
 
 // Casos a los que les falta llenar algún campo de los que este usuario puede diligenciar
 // (el administrador: todos los campos). Incluye la lista de campos que faltan; más recientes primero.
-app.get('/api/casos-incompletos', (req, res) => {
+app.get('/api/casos-incompletos', async (req, res) => {
   const ids = Object.keys(cfg.campos).filter((id) => cfg.puedeEditar(req.usuario.rol, id));
   if (!ids.length) return res.json([]);
-  const casos = db.prepare(
+  const casos = await db.todos(
     `SELECT * FROM casos WHERE ${ids.map((c) => `${c} = ''`).join(' OR ')} ORDER BY fecha_novedad DESC, id DESC`
-  ).all();
+  );
   res.json(casos.map((c) => ({
     id: c.id, nombre_operador: c.nombre_operador, fecha_novedad: c.fecha_novedad, faltan: ids.filter((id) => !c[id]),
   })));
 });
 
-app.get('/api/usuarios', soloAdmin, (req, res) => {
-  res.json(db.prepare('SELECT * FROM usuarios ORDER BY activo DESC, nombre').all().map(publico));
+app.get('/api/usuarios', soloAdmin, async (req, res) => {
+  res.json((await db.todos('SELECT * FROM usuarios ORDER BY activo DESC, nombre')).map(publico));
 });
 
-app.post('/api/usuarios', soloAdmin, (req, res) => {
+app.post('/api/usuarios', soloAdmin, async (req, res) => {
   const usuario = String(req.body?.usuario ?? '').trim().toLowerCase();
   const nombre = String(req.body?.nombre ?? '').trim();
   const rol = String(req.body?.rol ?? '');
   if (!/^[a-z0-9._-]{3,30}$/.test(usuario)) return error(res, 400, 'El usuario debe tener entre 3 y 30 letras o números, sin espacios');
   if (!nombre) return error(res, 400, 'Escribe el nombre de la persona');
   if (!cfg.roles[rol]) return error(res, 400, 'Elige un rol');
-  if (db.prepare('SELECT 1 FROM usuarios WHERE usuario = ?').get(usuario)) return error(res, 400, 'Ya existe ese nombre de usuario');
-  db.prepare('INSERT INTO usuarios (usuario, nombre, rol, clave) VALUES (?, ?, ?, ?)').run(usuario, nombre, rol, cifrarClave(CLAVE_INICIAL));
+  if (await db.uno('SELECT 1 FROM usuarios WHERE usuario = ?', [usuario])) return error(res, 400, 'Ya existe ese nombre de usuario');
+  await db.ejecutar('INSERT INTO usuarios (usuario, nombre, rol, clave) VALUES (?, ?, ?, ?)', [usuario, nombre, rol, cifrarClave(CLAVE_INICIAL)]);
   res.status(201).json({ ok: true, claveTemporal: CLAVE_INICIAL });
 });
 
-app.patch('/api/usuarios/:id', soloAdmin, (req, res) => {
-  const u = db.prepare('SELECT * FROM usuarios WHERE id = ?').get(Number(req.params.id) || -1);
+app.patch('/api/usuarios/:id', soloAdmin, async (req, res) => {
+  const u = await db.uno('SELECT * FROM usuarios WHERE id = ?', [Number(req.params.id) || -1]);
   if (!u) return error(res, 404, 'Usuario no encontrado');
   const { nombre, rol, activo, restablecerClave } = req.body ?? {};
   const esMismo = u.id === req.usuario.id;
   if (esMismo && (activo === false || (rol && rol !== 'ADMIN'))) return error(res, 400, 'No puedes quitarte tu propio acceso de administrador');
   if (rol !== undefined && !cfg.roles[rol]) return error(res, 400, 'Rol no válido');
-  if (nombre !== undefined && String(nombre).trim()) db.prepare('UPDATE usuarios SET nombre = ? WHERE id = ?').run(String(nombre).trim(), u.id);
-  if (rol !== undefined) db.prepare('UPDATE usuarios SET rol = ? WHERE id = ?').run(rol, u.id);
+  if (nombre !== undefined && String(nombre).trim()) await db.ejecutar('UPDATE usuarios SET nombre = ? WHERE id = ?', [String(nombre).trim(), u.id]);
+  if (rol !== undefined) await db.ejecutar('UPDATE usuarios SET rol = ? WHERE id = ?', [rol, u.id]);
   if (activo !== undefined) {
-    db.prepare('UPDATE usuarios SET activo = ? WHERE id = ?').run(activo ? 1 : 0, u.id);
-    if (!activo) db.prepare('DELETE FROM sesiones WHERE usuario_id = ?').run(u.id);
+    await db.ejecutar('UPDATE usuarios SET activo = ? WHERE id = ?', [activo ? 1 : 0, u.id]);
+    if (!activo) await db.ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', [u.id]);
   }
   if (restablecerClave) {
-    db.prepare('UPDATE usuarios SET clave = ?, debe_cambiar = 1 WHERE id = ?').run(cifrarClave(CLAVE_INICIAL), u.id);
-    db.prepare('DELETE FROM sesiones WHERE usuario_id = ?').run(u.id);
+    await db.ejecutar('UPDATE usuarios SET clave = ?, debe_cambiar = 1 WHERE id = ?', [cifrarClave(CLAVE_INICIAL), u.id]);
+    await db.ejecutar('DELETE FROM sesiones WHERE usuario_id = ?', [u.id]);
   }
   res.json({ ok: true, claveTemporal: restablecerClave ? CLAVE_INICIAL : undefined });
 });
@@ -265,9 +291,10 @@ function leerRol(cuerpo, idActual) {
   return { nombre, campos, propios, puede_crear: cuerpo.puede_crear ? 1 : 0 };
 }
 
-// Crea, actualiza o quita los campos propios de un rol. Al quitar un campo solo deja de
-// mostrarse: su columna y lo ya diligenciado se conservan en la base de datos.
-function guardarPropios(rolId, propios) {
+// Crea, actualiza o quita los campos propios de un rol ("t" es la transacción en curso). Al quitar
+// un campo solo deja de mostrarse: su columna y lo ya diligenciado se conservan en la base de datos.
+// La columna de un campo nuevo la crea asegurarColumnas() al terminar la transacción.
+async function guardarPropios(t, rolId, propios) {
   const actuales = cfg.crudo.campos.filter((c) => c.rol === rolId);
   const conservar = new Set();
   for (const p of propios) {
@@ -275,57 +302,60 @@ function guardarPropios(rolId, propios) {
     if (ya) {
       conservar.add(ya.id);
       // El tipo no cambia: ya puede haber casos diligenciados con él.
-      db.prepare('UPDATE campos_extra SET etiqueta = ?, opciones = ? WHERE id = ?')
-        .run(p.etiqueta, JSON.stringify(ya.tipo === 'opcion' && p.opciones.length >= 2 ? p.opciones : ya.opciones), Number(ya.id.slice(2)));
+      await t.ejecutar('UPDATE campos_extra SET etiqueta = ?, opciones = ? WHERE id = ?',
+        [p.etiqueta, JSON.stringify(ya.tipo === 'opcion' && p.opciones.length >= 2 ? p.opciones : ya.opciones), Number(ya.id.slice(2))]);
     } else {
-      const r = db.prepare('INSERT INTO campos_extra (rol, etiqueta, tipo, opciones) VALUES (?, ?, ?, ?)')
-        .run(rolId, p.etiqueta, p.tipo, JSON.stringify(p.opciones));
-      db.exec(`ALTER TABLE casos ADD COLUMN x_${Number(r.lastInsertRowid)} TEXT NOT NULL DEFAULT ''`);
+      await t.ejecutar('INSERT INTO campos_extra (rol, etiqueta, tipo, opciones) VALUES (?, ?, ?, ?)',
+        [rolId, p.etiqueta, p.tipo, JSON.stringify(p.opciones)]);
     }
   }
   for (const c of actuales) {
-    if (!conservar.has(c.id)) db.prepare('DELETE FROM campos_extra WHERE id = ?').run(Number(c.id.slice(2)));
+    if (!conservar.has(c.id)) await t.ejecutar('DELETE FROM campos_extra WHERE id = ?', [Number(c.id.slice(2))]);
   }
 }
 
-// Ejecuta varios cambios como uno solo y recarga roles y campos.
-function enBloque(fn) {
-  db.exec('BEGIN');
-  try { fn(); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; } finally { cfg = leerConfig(); }
+// Ejecuta varios cambios como uno solo, crea las columnas que hagan falta y recarga roles y campos.
+async function enBloque(fn) {
+  try {
+    await db.transaccion(fn);
+    await asegurarColumnas();
+  } finally {
+    cfg = await leerConfig();
+  }
 }
 
-app.post('/api/roles', soloAdmin, (req, res) => {
+app.post('/api/roles', soloAdmin, async (req, res) => {
   const d = leerRol(req.body);
   if (d.falla) return error(res, 400, d.falla);
   let id;
-  enBloque(() => {
-    const r = db.prepare('INSERT INTO roles (nombre, campos, puede_crear) VALUES (?, ?, ?)').run(d.nombre, JSON.stringify(d.campos), d.puede_crear);
-    id = 'ROL-' + Number(r.lastInsertRowid);
-    guardarPropios(id, d.propios);
+  await enBloque(async (t) => {
+    const r = await t.ejecutar('INSERT INTO roles (nombre, campos, puede_crear) VALUES (?, ?, ?)', [d.nombre, JSON.stringify(d.campos), d.puede_crear]);
+    id = 'ROL-' + r.insertId;
+    await guardarPropios(t, id, d.propios);
   });
   res.status(201).json({ id, ...cfg.crudo });
 });
 
-app.put('/api/roles/:id', soloAdmin, (req, res) => {
+app.put('/api/roles/:id', soloAdmin, async (req, res) => {
   const rol = cfg.rolesExtra.find((r) => r.id === req.params.id);
   if (!rol) return error(res, 404, 'Rol no encontrado');
   const d = leerRol(req.body, rol.id);
   if (d.falla) return error(res, 400, d.falla);
-  enBloque(() => {
-    db.prepare('UPDATE roles SET nombre = ?, campos = ?, puede_crear = ? WHERE id = ?').run(d.nombre, JSON.stringify(d.campos), d.puede_crear, Number(rol.id.slice(4)));
-    guardarPropios(rol.id, d.propios);
+  await enBloque(async (t) => {
+    await t.ejecutar('UPDATE roles SET nombre = ?, campos = ?, puede_crear = ? WHERE id = ?', [d.nombre, JSON.stringify(d.campos), d.puede_crear, Number(rol.id.slice(4))]);
+    await guardarPropios(t, rol.id, d.propios);
   });
   res.json({ id: rol.id, ...cfg.crudo });
 });
 
-app.delete('/api/roles/:id', soloAdmin, (req, res) => {
+app.delete('/api/roles/:id', soloAdmin, async (req, res) => {
   const rol = cfg.rolesExtra.find((r) => r.id === req.params.id);
   if (!rol) return error(res, 404, 'Rol no encontrado');
-  const n = db.prepare('SELECT COUNT(*) n FROM usuarios WHERE rol = ?').get(rol.id).n;
+  const n = (await db.uno('SELECT COUNT(*) n FROM usuarios WHERE rol = ?', [rol.id])).n;
   if (n) return error(res, 400, `Hay ${n} usuario(s) con este rol. Cámbiales el rol antes de eliminarlo.`);
-  enBloque(() => {
-    guardarPropios(rol.id, []);
-    db.prepare('DELETE FROM roles WHERE id = ?').run(Number(rol.id.slice(4)));
+  await enBloque(async (t) => {
+    await guardarPropios(t, rol.id, []);
+    await t.ejecutar('DELETE FROM roles WHERE id = ?', [Number(rol.id.slice(4))]);
   });
   res.json(cfg.crudo);
 });

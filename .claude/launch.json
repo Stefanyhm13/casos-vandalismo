@@ -1,11 +1,6 @@
 {
   "version": "0.0.1",
   "configurations": [
-    {
-      "name": "casos-vandalismo",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 5173
-    }
+    { "name": "casos-vandalismo", "runtimeExecutable": "cmd", "runtimeArgs": ["/c", "set PORT=3000&& npm run dev"], "port": 5173 }
   ]
 }

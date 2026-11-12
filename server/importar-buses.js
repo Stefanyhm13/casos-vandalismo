@@ -27,19 +27,12 @@ libro.worksheets[0].eachRow((fila, n) => {
   }
 });
 
-const antes = new Map(db.prepare('SELECT numero, placa FROM buses').all().map((b) => [b.numero, b.placa]));
-const guardar = db.prepare('INSERT OR REPLACE INTO buses (numero, placa) VALUES (?, ?)');
-db.exec('BEGIN');
-try {
-  for (const [numero, placa] of buses) guardar.run(numero, placa);
-  db.exec('COMMIT');
-} catch (e) {
-  db.exec('ROLLBACK');
-  throw e;
-}
+const antes = new Map((await db.todos('SELECT numero, placa FROM buses')).map((b) => [b.numero, b.placa]));
+await db.transaccion((t) => t.varios('REPLACE INTO buses (numero, placa) VALUES ?', [...buses]));
 
 const nuevos = [...buses].filter(([n]) => !antes.has(n));
 const cambiados = [...buses].filter(([n, p]) => antes.has(n) && antes.get(n) !== p);
 console.log(`Buses en el Excel: ${buses.size} · nuevos: ${nuevos.length} · con placa corregida: ${cambiados.length}`);
 for (const [n, p] of cambiados) console.log(`  Bus ${n}: ${antes.get(n)} -> ${p}`);
 if (omitidas.length) console.log('Filas que no se pudieron leer:', omitidas.join(', '));
+await db.cerrar();

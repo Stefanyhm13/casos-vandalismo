@@ -133,6 +133,15 @@ export default function Caso({ id, usuario, cfg }) {
       if (op) { cambiar('nombre_operador', op.nombre); cambiar('cedula_operador', op.cedula); }
       setNota((n) => ({ ...n, codigo_operador: op ? '' : 'No está en el listado de operadores. Escribe el nombre y el documento.' }));
     }
+    // Al salir del documento: trae el código y el nombre del operador
+    if (campo.id === 'cedula_operador') {
+      const cedula = valor('cedula_operador').replace(/\D/g, '');
+      if (cedula.length < 5 || cedula === (original.cedula_operador ?? '')) return setNota((n) => ({ ...n, cedula_operador: '' }));
+      const op = await api('/operadores/cedula/' + cedula).catch(() => null);
+      if (op?.codigo) cambiar('codigo_operador', op.codigo);
+      if (op?.nombre) cambiar('nombre_operador', op.nombre);
+      setNota((n) => ({ ...n, cedula_operador: op ? '' : 'No se encontró este documento. Escribe el código y el nombre.', ...(op?.codigo ? { codigo_operador: '' } : {}) }));
+    }
     if (campo.id === 'numero_bus') {
       const numero = sinCeros(valor('numero_bus'));
       const bus = buses.find((b) => b.numero === numero);

@@ -40,38 +40,33 @@ const hora = (v) => (v instanceof Date ? `${dos(v.getUTCHours())}:${dos(v.getUTC
 const sinDato = (v) => (/^(no registra|n\/?a|-)$/i.test(texto(v)) ? '' : texto(v));
 const nombrePropio = (s) => texto(s).toLowerCase().replace(/(^|\s)\S/g, (l) => l.toUpperCase());
 
-db.exec('BEGIN');
-try {
+await db.transaccion(async (t) => {
   // --- Operadores (hoja rptDriver): solo código, nombre y documento ---
-  const hOper = hojas.rptDriver;
-  let nOper = 0;
-  if (hOper) {
-    const ins = db.prepare('INSERT OR REPLACE INTO operadores (codigo, nombre, cedula) VALUES (?, ?, ?)');
-    cadaFila(hOper, (fila, n) => {
+  const operadores = [];
+  if (hojas.rptDriver) {
+    cadaFila(hojas.rptDriver, (fila, n) => {
       if (n < 5) return;
       const codigo = texto(valor(fila.getCell(1))).replace(/\D/g, '');
       if (!codigo) return;
-      ins.run(codigo.padStart(4, '0'), nombrePropio(`${valor(fila.getCell(2))} ${valor(fila.getCell(3))}`), texto(valor(fila.getCell(5))).replace(/\D/g, ''));
-      nOper++;
+      operadores.push([codigo.padStart(4, '0'), nombrePropio(`${valor(fila.getCell(2))} ${valor(fila.getCell(3))}`), texto(valor(fila.getCell(5))).replace(/\D/g, '')]);
     });
   }
+  await t.varios('REPLACE INTO operadores (codigo, nombre, cedula) VALUES ?', operadores);
 
   // --- Buses (hoja Placas) ---
-  const hBus = hojas.Placas;
-  let nBus = 0;
-  if (hBus) {
-    const ins = db.prepare('INSERT OR REPLACE INTO buses (numero, placa) VALUES (?, ?)');
-    cadaFila(hBus, (fila, n) => {
+  const buses = [];
+  if (hojas.Placas) {
+    cadaFila(hojas.Placas, (fila, n) => {
       const numero = texto(valor(fila.getCell(1)));
       if (n < 2 || !/^\d+$/.test(numero)) return;
-      ins.run(numero, texto(valor(fila.getCell(2))).toUpperCase());
-      nBus++;
+      buses.push([numero, texto(valor(fila.getCell(2))).toUpperCase()]);
     });
   }
-  console.log(`Operadores cargados: ${nOper} · Buses cargados: ${nBus}`);
+  await t.varios('REPLACE INTO buses (numero, placa) VALUES ?', buses);
+  console.log(`Operadores cargados: ${operadores.length} · Buses cargados: ${buses.length}`);
 
   // --- Casos (hoja Datos) ---
-  const yaHay = db.prepare('SELECT COUNT(*) n FROM casos').get().n;
+  const yaHay = (await t.uno('SELECT COUNT(*) n FROM casos')).n;
   if (yaHay > 0) {
     console.log(`La base ya tiene ${yaHay} casos: no se vuelven a importar para no duplicarlos.`);
   } else {
@@ -86,11 +81,9 @@ try {
       'fuente_evento', 'categoria_riesgo', 'responsabilidad', 'restriccion_operador', 'tiempo_restriccion', 'estado',
       'clasificacion_cuantia', 'proceso_legal',
     ];
-    const operador = db.prepare('SELECT * FROM operadores WHERE codigo = ?');
-    const bus = db.prepare('SELECT * FROM buses WHERE numero = ?');
-    const ins = db.prepare(`INSERT INTO casos (creado_por, ${columnas.join(', ')}) VALUES (?${', ?'.repeat(columnas.length)})`);
-    const hist = db.prepare("INSERT INTO historial (caso_id, usuario, rol, detalle) VALUES (?, 'Importación', 'Sistema', 'Caso cargado desde el Excel')");
-    let nCasos = 0;
+    const operador = new Map((await t.todos('SELECT * FROM operadores')).map((o) => [o.codigo, o]));
+    const bus = new Map((await t.todos('SELECT * FROM buses')).map((b) => [b.numero, b]));
+    const casos = [];
     cadaFila(hoja, (fila, n) => {
       if (n < 3) return;
       const c = {};
@@ -104,14 +97,16 @@ try {
       c.nombre_operador ||= op?.nombre ?? '';
       c.cedula_operador ||= op?.cedula ?? '';
       c.placa_bus ||= bus.get(c.numero_bus)?.placa ?? '';
-      const r = ins.run('Importación', ...columnas.map((id) => c[id]));
-      hist.run(r.lastInsertRowid);
-      nCasos++;
+      casos.push(c);
     });
-    console.log(`Casos importados: ${nCasos}`);
+    for (const c of casos) {
+      const r = await t.ejecutar(
+        `INSERT INTO casos (creado_por, ${columnas.join(', ')}) VALUES (?${', ?'.repeat(columnas.length)})`,
+        ['Importación', ...columnas.map((id) => c[id])]
+      );
+      await t.ejecutar("INSERT INTO historial (caso_id, usuario, rol, detalle) VALUES (?, 'Importación', 'Sistema', 'Caso cargado desde el Excel')", [r.insertId]);
+    }
+    console.log(`Casos importados: ${casos.length}`);
   }
-  db.exec('COMMIT');
-} catch (e) {
-  db.exec('ROLLBACK');
-  throw e;
-}
+});
+await db.cerrar();

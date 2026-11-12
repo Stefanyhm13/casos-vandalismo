@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api } from '../api.js';
+import CampoClave from './CampoClave.jsx';
 
 export default function CambiarClave({ obligatorio, alTerminar, alSalir }) {
   const [actual, setActual] = useState('');
@@ -24,15 +25,15 @@ export default function CambiarClave({ obligatorio, alTerminar, alSalir }) {
       {obligatorio && <p className="suave">Estás usando una contraseña temporal. Antes de continuar, crea una que solo tú conozcas.</p>}
       <label>
         {obligatorio ? 'Contraseña temporal' : 'Contraseña actual'}
-        <input type="password" value={actual} onChange={(e) => setActual(e.target.value)} autoFocus autoComplete="current-password" />
+        <CampoClave value={actual} onChange={(e) => setActual(e.target.value)} autoFocus autoComplete="current-password" />
       </label>
       <label>
         Nueva contraseña <small className="suave">(mínimo 8 caracteres)</small>
-        <input type="password" value={nueva} onChange={(e) => setNueva(e.target.value)} autoComplete="new-password" />
+        <CampoClave value={nueva} onChange={(e) => setNueva(e.target.value)} autoComplete="new-password" />
       </label>
       <label>
         Repite la nueva contraseña
-        <input type="password" value={repetir} onChange={(e) => setRepetir(e.target.value)} autoComplete="new-password" />
+        <CampoClave value={repetir} onChange={(e) => setRepetir(e.target.value)} autoComplete="new-password" />
       </label>
       {error && <div className="aviso error">{error}</div>}
       <button className="boton primario grande" disabled={!actual || !nueva || !repetir}>Guardar contraseña</button>
