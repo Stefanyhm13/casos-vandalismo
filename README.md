@@ -12,6 +12,8 @@ compartido: varias personas trabajan al mismo tiempo y cada área solo modifica 
 > **Para ejecutarla en el equipo de desarrollo:** `npm.cmd run dev` y entrar a http://localhost:5173.
 > Se detiene con `Ctrl + C`. (En PowerShell de ese equipo hay que escribir `npm.cmd`; en otras terminales basta `npm`.)
 
+npm.cmd run dev
+
 ## Contenido
 
 1. [Instalación en el servidor](#instalación-en-el-servidor)
@@ -41,19 +43,15 @@ compartido: varias personas trabajan al mismo tiempo y cada área solo modifica 
    ```bash
    npm install
    ```
-
 2. Copiar `.env.example` como `.env` y escribir los datos de conexión (ver [Archivo `.env`](#archivo-env)).
    Lo único obligatorio es MySQL.
-
 3. Crear la base de datos. La app crea sola todas las tablas la primera vez que arranca, y también
    la base si el usuario tiene permiso. Si no lo tiene, pedir que la creen vacía:
 
    ```sql
    CREATE DATABASE casos_vandalismo CHARACTER SET utf8mb4;
    ```
-
 4. Cargar los datos (una sola vez): ver [Pasar los datos a MySQL](#pasar-los-datos-a-mysql).
-
 5. Compilar la interfaz e iniciar:
 
    ```bash
@@ -120,14 +118,14 @@ base todavía no tiene ninguno (para no duplicarlos).
 Está en la raíz del proyecto, no se sube a GitHub y se lee al arrancar. Después de cambiarlo hay
 que reiniciar la app.
 
-| Variable | Para qué sirve |
-| --- | --- |
-| `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE` | **Obligatorio.** Base de datos de la app. |
-| `PORT` | Puerto de la app (por defecto 3000). |
-| `CLAVE_INICIAL` | Contraseña temporal de los usuarios nuevos (por defecto `Vandalismo2026`). |
+| Variable                                                                                 | Para qué sirve                                                                                                                                            |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`   | **Obligatorio.** Base de datos de la app.                                                                                                            |
+| `PORT`                                                                                 | Puerto de la app (por defecto 3000).                                                                                                                       |
+| `CLAVE_INICIAL`                                                                        | Contraseña temporal de los usuarios nuevos (por defecto `Vandalismo2026`).                                                                              |
 | `MSSQL_SERVER`, `MSSQL_PORT`, `MSSQL_USER`, `MSSQL_PASSWORD`, `MSSQL_DATABASE` | Opcional. Base **Reportes** (SQL Server) de donde salen el código, el documento y el nombre del operador. `MSSQL_DATABASE` debe ser `Reportes`. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Opcional. Servidor de correo para los avisos. |
-| `APP_URL` | Opcional. Dirección con la que se entra a la app (ej.: `http://IP-DEL-SERVIDOR:3000`); con ella el correo lleva el enlace directo al caso. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`            | Opcional. Servidor de correo para los avisos.                                                                                                              |
+| `APP_URL`                                                                              | Opcional. Dirección con la que se entra a la app (ej.: `http://IP-DEL-SERVIDOR:3000`); con ella el correo lleva el enlace directo al caso.              |
 
 Lo opcional se puede dejar sin llenar: la app funciona igual, sin esa función.
 
@@ -136,13 +134,13 @@ Lo opcional se puede dejar sin llenar: la app funciona igual, sin esa función.
 La primera vez (si no se migraron usuarios) se crean estos, con la contraseña temporal
 `Vandalismo2026`; el sistema obliga a cambiarla en el primer ingreso:
 
-| Usuario | Rol | Qué puede modificar |
-| --- | --- | --- |
-| `admin` | Administrador | Todo. Crea usuarios y roles, restablece contraseñas y elimina casos |
-| `pesv` | PESV Administrativo | Crea casos. Datos de la novedad, del tercero, policía y denuncia |
-| `cmo` | Profesional CMO | Atención del CMO |
-| `sies24` | SIES24 | Análisis SIES24 (incluye el estado del caso) |
-| `juridico` | Profesional Jurídico | Gestión jurídica |
+| Usuario      | Rol                   | Qué puede modificar                                                 |
+| ------------ | --------------------- | -------------------------------------------------------------------- |
+| `admin`    | Administrador         | Todo. Crea usuarios y roles, restablece contraseñas y elimina casos |
+| `pesv`     | PESV Administrativo   | Crea casos. Datos de la novedad, del tercero, policía y denuncia    |
+| `cmo`      | Profesional CMO       | Atención del CMO                                                    |
+| `sies24`   | SIES24                | Análisis SIES24 (incluye el estado del caso)                        |
+| `juridico` | Profesional Jurídico | Gestión jurídica                                                   |
 
 Existe además el rol **Solo consulta**. Todos los roles ven el caso completo; lo que no les
 corresponde aparece bloqueado. El permiso se valida también en el servidor.
@@ -153,16 +151,6 @@ Desde el menú **Usuarios**, el administrador:
 - cambia el rol o el correo, restablece la contraseña y activa o desactiva usuarios;
 - crea roles nuevos: elige qué campos existentes puede editar el rol, le agrega campos propios
   (texto, número, fecha, hora o lista de opciones) y define si puede crear casos.
-
-**Contraseñas olvidadas:** el administrador restablece la de cualquier usuario desde el menú
-**Usuarios**. Si quien la olvidó es el administrador, se hace desde la terminal del servidor
-(queda la contraseña temporal y se pide cambiarla al ingresar):
-
-```bash
-npm run restablecer-clave -- admin
-```
-
-Con `todos` en lugar del nombre de usuario se restablecen las de todos los usuarios.
 
 ## Cómo funciona
 
