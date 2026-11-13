@@ -1,6 +1,0 @@
-node_modules/
-dist/
-# La base de datos y el Excel contienen datos personales: no se suben al repositorio
-data/*
-!data/.gitkeep
-.env
