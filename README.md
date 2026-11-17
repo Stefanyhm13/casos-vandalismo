@@ -52,7 +52,7 @@ buses). No hay que crearla ni migrar nada.
 | `usuarios` | Usuarios de la app (la contraseña va cifrada) |
 | `sesiones` | Sesiones abiertas (duran 12 horas) |
 | `roles`, `campos_extra` | Roles y campos creados por el administrador desde el menú Usuarios |
-| `operadores` | Listado de operadores de respaldo (código, nombre, documento), cargado desde el Excel |
+| `operadores` | Listado de operadores de respaldo (código, nombre, documento), cargado en su momento desde el Excel. Solo se usa para quien no está en Reportes |
 | `buses` | Listado de buses (número y placa). Lo maneja el administrador en **Rutas y buses** |
 | `rutas` | Lista de rutas del campo Ruta. Lo maneja el administrador en **Rutas y buses** |
 
@@ -268,8 +268,6 @@ Toda la información está en la base MySQL del servidor de la empresa: el respa
 | `server/reportes.js` | Consulta de operadores en la base Reportes |
 | `server/correo.js` | Texto y envío de los correos |
 | `server/exportar.js` | Diseño del Excel exportado |
-| `server/importar.js` | `npm run importar -- "archivo.xlsx"`: actualiza el listado de operadores (y buses) desde el Excel "Datos Atención Vandalismo". Los casos del Excel solo se cargan si la base no tiene ninguno, así que ya no se cargan |
-| `server/importar-buses.js` | `npm run importar-buses -- "archivo.xlsx"`: actualiza el listado de buses desde el Excel "Placas Unidad SAO6" |
 | `server/restablecer-clave.js` | `npm run restablecer-clave -- usuario`: deja la contraseña temporal |
 | `src/App.jsx` | Barra superior y pestañas (Casos, Indicadores, Usuarios) |
 | `src/componentes/` | Pantallas: `Lista` (casos), `Caso` (formulario), `Indicadores`, `Usuarios`, `Listas` (rutas y buses), `Incompletos` (aviso de pendientes), `CampoFecha` (calendario y campo de hora), `FotoOperador`, `Login`… |
@@ -294,6 +292,9 @@ Toda la información está en la base MySQL del servidor de la empresa: el respa
 - **Menú Rutas y buses** (administrador): agregar o quitar rutas, y agregar, cambiar la placa o quitar
   buses. Se crea la tabla `rutas` con la lista inicial.
 - **Los casos se abren desde arriba**, en la ficha del operador.
+- **Se quitaron los importadores de Excel** (`importar` e `importar-buses`): los casos, operadores y
+  buses ya están en la base del servidor, y los buses ahora se manejan desde **Rutas y buses**. Volver
+  a cargarlos desde un Excel viejo habría sobrescrito las placas cambiadas en la app.
 - **Pestaña Indicadores** para todos los roles (ver [Indicadores](#indicadores)).
 - **Desplazamiento más fluido:** el fondo se dibuja una sola vez en su propia capa y el efecto de
   vidrio de las tarjetas es más liviano.
