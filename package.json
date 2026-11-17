@@ -1,0 +1,32 @@
+{
+  "name": "casos-vandalismo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Registro y seguimiento de casos de vandalismo por roles",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "concurrently -n servidor,web -c green,blue \"node --watch server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "importar": "node server/importar.js",
+    "importar-buses": "node server/importar-buses.js",
+    "restablecer-clave": "node server/restablecer-clave.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^5.3.0",
+    "mssql": "^12.7.14",
+    "mysql2": "^3.24.6",
+    "nodemailer": "^10.5.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.3.0",
+    "concurrently": "^10.0.7",
+    "vite": "^8.3.7"
+  }
+}

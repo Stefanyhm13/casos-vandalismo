@@ -1,0 +1,10 @@
+# Datos sensibles: NUNCA se suben a GitHub.
+# El .env tiene servidores, usuarios y contraseñas. En el servidor se crea a mano a partir de .env.example.
+.env
+
+# Librerías: se instalan en el servidor con "npm install"
+node_modules/
+
+# Archivos del equipo de desarrollo que no sirven en el servidor
+.claude/
+*.log

@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMax slice">
+  <!-- Fondo de la aplicación: Medellín de día con un bus alimentador, en verdes, blanco y gris. Ilustración propia. -->
+  <defs>
+    <linearGradient id="cielo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8fcf8"/>
+      <stop offset="0.5" stop-color="#e6f3e8"/>
+      <stop offset="1" stop-color="#cfe8d4"/>
+    </linearGradient>
+    <radialGradient id="sol" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="0.4" stop-color="#ffffff" stop-opacity="0.6"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="ventanas" width="22" height="26" patternUnits="userSpaceOnUse">
+      <rect x="5" y="6" width="9" height="11" fill="#ffffff" opacity="0.55"/>
+    </pattern>
+    <pattern id="ventanas2" width="30" height="34" patternUnits="userSpaceOnUse">
+      <rect x="6" y="8" width="14" height="14" fill="#e9f6ec" opacity="0.7"/>
+    </pattern>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#cielo)"/>
+  <circle cx="1180" cy="250" r="260" fill="url(#sol)"/>
+
+  <!-- Nubes -->
+  <g fill="#fff" opacity="0.95">
+    <rect x="180" y="250" width="230" height="30" rx="15"/><rect x="230" y="226" width="120" height="34" rx="17"/>
+    <rect x="980" y="330" width="260" height="32" rx="16"/><rect x="1050" y="304" width="130" height="36" rx="18"/>
+    <rect x="640" y="180" width="170" height="24" rx="12"/><rect x="1380" y="150" width="150" height="24" rx="12"/>
+  </g>
+
+  <!-- Montañas del valle -->
+  <path d="M0 610 C160 520 300 470 450 540 C560 590 640 500 780 470 C940 436 1040 540 1180 520 C1330 498 1450 430 1600 500 V900 H0Z" fill="#c3e2c9"/>
+  <path d="M0 690 C140 610 260 600 400 640 C540 680 640 600 800 590 C980 580 1080 660 1240 630 C1400 600 1500 560 1600 600 V900 H0Z" fill="#a9d6b2"/>
+
+  <!-- Ciudad al fondo, en gris verdoso -->
+  <g fill="#b4c9ba">
+    <rect x="60" y="610" width="90" height="230"/><rect x="170" y="560" width="70" height="280"/>
+    <rect x="262" y="640" width="120" height="200"/><rect x="560" y="600" width="84" height="240"/>
+    <rect x="664" y="650" width="130" height="190"/><rect x="820" y="580" width="76" height="260"/>
+    <rect x="1180" y="620" width="100" height="220"/><rect x="1300" y="570" width="80" height="270"/>
+    <!-- Edificio de la aguja -->
+    <polygon points="420,840 420,500 452,470 462,360 472,470 504,500 504,840"/>
+  </g>
+  <g>
+    <rect x="60" y="610" width="90" height="230" fill="url(#ventanas)"/><rect x="170" y="560" width="70" height="280" fill="url(#ventanas)"/>
+    <rect x="560" y="600" width="84" height="240" fill="url(#ventanas)"/><rect x="820" y="580" width="76" height="260" fill="url(#ventanas)"/>
+    <rect x="1300" y="570" width="80" height="270" fill="url(#ventanas)"/><rect x="424" y="510" width="76" height="320" fill="url(#ventanas)"/>
+  </g>
+
+  <!-- Ciudad cercana, en verde -->
+  <g fill="#7fbf8e">
+    <rect x="0" y="700" width="170" height="150"/><rect x="190" y="670" width="150" height="180"/>
+    <rect x="360" y="720" width="190" height="130"/><rect x="570" y="690" width="140" height="160"/>
+    <rect x="730" y="730" width="170" height="120"/><rect x="1130" y="700" width="120" height="150"/>
+  </g>
+  <g fill="#5fa872">
+    <rect x="184" y="660" width="162" height="12"/><rect x="564" y="680" width="152" height="12"/>
+    <rect x="-6" y="692" width="182" height="10"/><rect x="354" y="712" width="202" height="10"/>
+  </g>
+  <g>
+    <rect x="0" y="706" width="170" height="140" fill="url(#ventanas2)"/><rect x="190" y="676" width="150" height="170" fill="url(#ventanas2)"/>
+    <rect x="570" y="696" width="140" height="150" fill="url(#ventanas2)"/><rect x="1130" y="700" width="120" height="150" fill="url(#ventanas2)"/>
+    <rect x="360" y="726" width="190" height="120" fill="url(#ventanas2)"/>
+  </g>
+
+  <!-- Colina verde con árboles -->
+  <ellipse cx="1500" cy="900" rx="420" ry="210" fill="#58bd6c"/>
+  <g>
+    <g fill="#2c7a45"><rect x="1336" y="740" width="6" height="40"/><rect x="1426" y="712" width="6" height="40"/><rect x="1516" y="700" width="6" height="44"/><rect x="1566" y="724" width="6" height="40"/></g>
+    <g fill="#2f9550"><circle cx="1339" cy="730" r="24"/><circle cx="1429" cy="700" r="26"/><circle cx="1519" cy="686" r="28"/><circle cx="1569" cy="712" r="22"/></g>
+    <g fill="#4cc253" opacity="0.7"><circle cx="1332" cy="722" r="11"/><circle cx="1421" cy="692" r="12"/><circle cx="1511" cy="677" r="13"/><circle cx="1563" cy="705" r="10"/></g>
+  </g>
+
+  <!-- Vía -->
+  <rect x="0" y="826" width="1600" height="74" fill="#8e9c94"/>
+  <rect x="0" y="826" width="1600" height="5" fill="#6f7d75"/>
+  <g fill="#fff" opacity="0.85">
+    <rect x="40" y="866" width="90" height="6" rx="3"/><rect x="220" y="866" width="90" height="6" rx="3"/><rect x="400" y="866" width="90" height="6" rx="3"/>
+    <rect x="580" y="866" width="90" height="6" rx="3"/><rect x="760" y="866" width="90" height="6" rx="3"/><rect x="940" y="866" width="90" height="6" rx="3"/>
+    <rect x="1120" y="866" width="90" height="6" rx="3"/><rect x="1300" y="866" width="90" height="6" rx="3"/><rect x="1480" y="866" width="90" height="6" rx="3"/>
+  </g>
+
+  <!-- Bus alimentador -->
+  <g transform="translate(900 692)">
+    <ellipse cx="200" cy="164" rx="215" ry="8" fill="#22332a" opacity="0.25"/>
+    <rect x="118" y="-13" width="156" height="16" rx="7" fill="#aab4ae"/>
+    <path d="M14 0 H330 Q352 0 362 22 L392 92 Q398 106 398 118 V128 Q398 140 386 140 H12 Q0 140 0 128 V14 Q0 0 14 0Z" fill="#ffffff"/>
+    <path d="M0 112 H398 V128 Q398 140 386 140 H12 Q0 140 0 128Z" fill="#cfd6d2"/>
+    <!-- Franjas verde y amarilla -->
+    <rect x="0" y="72" width="214" height="10" fill="#4cc253"/>
+    <rect x="0" y="84" width="214" height="8" fill="#e0b01b"/>
+    <path d="M276 92 H392 Q396 100 397 110 H276Z" fill="#4cc253"/>
+    <!-- Ventanas, puerta y parabrisas -->
+    <g fill="#22362c">
+      <rect x="12" y="12" width="62" height="50" rx="5"/><rect x="80" y="12" width="62" height="50" rx="5"/><rect x="148" y="12" width="62" height="50" rx="5"/>
+      <rect x="216" y="12" width="56" height="116" rx="5"/>
+      <path d="M280 12 H326 Q340 12 347 26 L372 84 H280Z"/>
+    </g>
+    <g stroke="#fff" stroke-width="3" opacity="0.2" stroke-linecap="round">
+      <line x1="24" y1="54" x2="50" y2="20"/><line x1="92" y1="54" x2="118" y2="20"/><line x1="160" y1="54" x2="186" y2="20"/><line x1="296" y1="70" x2="326" y2="24"/>
+    </g>
+    <line x1="244" y1="14" x2="244" y2="126" stroke="#ffffff" stroke-width="3" opacity="0.6"/>
+    <rect x="370" y="110" width="22" height="9" rx="4.5" fill="#f3d98a"/>
+    <rect x="0" y="100" width="8" height="10" rx="2" fill="#e5484d"/>
+    <!-- Ruedas -->
+    <g><circle cx="84" cy="140" r="27" fill="#2a3832"/><circle cx="84" cy="140" r="12" fill="#b3beb8"/><circle cx="312" cy="140" r="27" fill="#2a3832"/><circle cx="312" cy="140" r="12" fill="#b3beb8"/></g>
+  </g>
+</svg>
